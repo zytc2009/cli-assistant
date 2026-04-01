@@ -702,8 +702,11 @@ ai-council/
 │   ├── summarizer.py             # 纪要 + 方案文档生成
 │   ├── consensus.py              # 共识检测
 │   ├── context.py                # 上下文压缩
-│   ├── cli_detector.py           # CLI 自动检测
-│   └── streaming_runner.py       # 实时流式输出 runner
+│   └── cli_detector.py           # CLI 自动检测
+│
+├── tests/                        # 测试（TODO）
+│   ├── unit/                     # 单元测试
+│   └── integration/              # CLI 集成测试
 │
 └── meetings/                     # 会议记录（自动生成）
     └── {topic_id}/

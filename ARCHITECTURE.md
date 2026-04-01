@@ -592,6 +592,12 @@ tokens used                            ← 固定尾
 
 ---
 
+## 测试策略
+
+详见 [TESTING.md](./TESTING.md)。
+
+---
+
 ## 关键设计决策
 
 ### 为什么用文件传 prompt 而不是管道（stdin）

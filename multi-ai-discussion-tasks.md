@@ -1,12 +1,14 @@
 # Multi-AI Discussion — 实现任务清单（交互式向导版）
 
+> **状态更新（2026-04-01）**：Phase 0-4 已全部完成，P1 功能（检测保存/手动回退）部分完成。
+
 基于更新后的设计文档，实现无参数启动的交互式向导模式。
 
 ---
 
-## Phase 0: CLI 检测模块
+## Phase 0: CLI 检测模块 ✅
 
-### Task 0.1 — 创建 `lib/cli_detector.py`
+### Task 0.1 — 创建 `lib/cli_detector.py` ✅
 
 **文件**：`lib/cli_detector.py`
 
@@ -23,7 +25,7 @@
 
 ---
 
-### Task 0.2 — 创建 `lib/streaming_runner.py`
+### Task 0.2 — 创建 `lib/streaming_runner.py` ✅
 
 **文件**：`lib/streaming_runner.py`
 
@@ -49,9 +51,9 @@
 
 ---
 
-## Phase 1: 交互式向导框架
+## Phase 1: 交互式向导框架 ✅
 
-### Task 1.1 — 多行输入收集
+### Task 1.1 — 多行输入收集 ✅
 
 **文件**：`council.py` 新增函数
 
@@ -73,7 +75,7 @@ def _input_idea() -> str:
 
 ---
 
-### Task 1.2 — CLI 选择与确认
+### Task 1.2 — CLI 选择与确认 ✅
 
 **文件**：`council.py` 新增函数
 
@@ -105,7 +107,7 @@ def _select_clis(available_clis: List[CLIDetected]) -> List[str]:
 
 ---
 
-### Task 1.3 — 主持人选择
+### Task 1.3 — 主持人选择 ✅
 
 **文件**：`council.py` 新增函数
 
@@ -130,7 +132,7 @@ def _select_moderator(selected_agents: List[str], config: Config) -> str:
 
 ---
 
-### Task 1.4 — 配置确认
+### Task 1.4 — 配置确认 ✅
 
 **文件**：`council.py` 新增函数
 
@@ -150,9 +152,9 @@ def _confirm_config() -> dict:
 
 ---
 
-## Phase 2: 实时输出集成
+## Phase 2: 实时输出集成 ✅
 
-### Task 2.1 — Phase 1 实时输出改造
+### Task 2.1 — Phase 1 实时输出改造 ✅
 
 **文件**：修改 `lib/discussion_orchestrator.py`
 
@@ -183,7 +185,7 @@ Phase 1: 独立发言
 
 ---
 
-### Task 2.2 — Phase 2 实时输出改造
+### Task 2.2 — Phase 2 实时输出改造 ✅
 
 **文件**：修改 `lib/discussion_orchestrator.py`
 
@@ -194,7 +196,7 @@ Phase 1: 独立发言
 
 ---
 
-### Task 2.3 — Phase 3 实时输出改造
+### Task 2.3 — Phase 3 实时输出改造 ✅
 
 **文件**：修改 `lib/discussion_orchestrator.py`
 
@@ -204,9 +206,9 @@ Phase 1: 独立发言
 
 ---
 
-## Phase 3: 无参数启动入口
+## Phase 3: 无参数启动入口 ✅
 
-### Task 3.1 — 主入口改造
+### Task 3.1 — 主入口改造 ✅
 
 **文件**：`council.py`
 
@@ -226,7 +228,7 @@ def cli(ctx):
 
 ---
 
-### Task 3.2 — 交互向导主流程
+### Task 3.2 — 交互向导主流程 ✅
 
 **文件**：`council.py` 新增函数
 
@@ -286,9 +288,9 @@ Phase 1: 独立发言
 
 ---
 
-## Phase 4: 配置持久化（P1）
+## Phase 4: 配置持久化（P1）🔄 进行中
 
-### Task 4.1 — 检测到的 CLI 自动保存
+### Task 4.1 — 检测到的 CLI 自动保存 🔄 待实现
 
 **文件**：`lib/cli_detector.py` 或 `council.py`
 
@@ -299,9 +301,9 @@ Phase 1: 独立发言
 
 ---
 
-## Phase 5: 回退机制（P1）
+## Phase 5: 回退机制（P1）🔄 进行中
 
-### Task 5.1 — 手动输入 CLI 路径
+### Task 5.1 — 手动输入 CLI 路径 🔄 待实现
 
 **文件**：`council.py`
 
@@ -352,6 +354,8 @@ Phase 4-5 (P1 优化)  ← Phase 3 完成后
 ```
 0.1 → 0.2 → 1.1 → 1.2 → 1.3 → 1.4 → 2.1 → 2.2 → 2.3 → 3.1 → 3.2
 ```
+
+**✅ 已完成（2026-04-01）**
 
 ---
 

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 
-@dataclass(frozen=True)
+@dataclass
 class Round:
     round_num: int
     responses: Dict[str, str] = field(default_factory=dict)

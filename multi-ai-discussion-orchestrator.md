@@ -540,7 +540,6 @@ class StreamingRunner:
 |------|------|
 | `lib/cli_detector.py` | 检测本地安装的 AI CLI |
 | `lib/streaming_runner.py` | 流式实时输出版本的运行器 |
-| `lib/moderator.py` | 主持人逻辑：生成开场引导、生成最终结果文档 |
 | `config/prompts/moderator_opening.md` | 主持人每轮开场 prompt 模板 |
 | `config/prompts/moderator_synthesis.md` | 主持人最终综合 prompt 模板 |
 | `config/prompts/independent_opinion.md` | Phase 1 独立发言 prompt 模板 |
