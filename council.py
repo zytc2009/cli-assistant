@@ -15,11 +15,15 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from lib.agent_runner import AgentRunner
 from lib.config import Config
+from lib.discussion_orchestrator import DiscussionOrchestrator
 from lib.meeting import (
+    Discussion,
     Meeting,
     create_topic_id,
     list_meetings,
+    load_discussion,
     load_meeting,
+    save_discussion,
     save_meeting,
 )
 from lib.orchestrator import Orchestrator
@@ -36,6 +40,10 @@ def _make_runner(config: Config) -> AgentRunner:
 
 def _make_orchestrator(config: Config, runner: AgentRunner) -> Orchestrator:
     return Orchestrator(config=config, base_dir=BASE_DIR, runner=runner)
+
+
+def _make_discussion_orchestrator(config: Config, runner: AgentRunner) -> DiscussionOrchestrator:
+    return DiscussionOrchestrator(config=config, base_dir=BASE_DIR, runner=runner)
 
 
 def _parse_agents(agents_str: str, config: Config, strategy: str, session_type: str) -> list[str]:
@@ -230,23 +238,31 @@ def list_cmd():
         return
 
     table = Table(show_header=True, header_style="bold cyan")
-    table.add_column("ID", style="dim", width=30)
-    table.add_column("议题", width=30)
+    table.add_column("ID", style="dim", width=25)
+    table.add_column("类型", width=8)
+    table.add_column("议题/想法", width=25)
     table.add_column("状态", width=12)
     table.add_column("阶段数", justify="right", width=6)
-    table.add_column("创建时间", width=20)
+    table.add_column("创建时间", width=16)
 
     status_colors = {
         "draft": "yellow",
         "in_progress": "blue",
         "finalized": "green",
     }
+    mode_labels = {
+        "discuss": "[讨论]",
+        "meeting": "[会议]",
+    }
 
     for m in meetings:
         color = status_colors.get(m["status"], "white")
+        mode_label = mode_labels.get(m.get("mode", "meeting"), "")
+        topic_display = m["topic"][:22] + "..." if len(m["topic"]) > 25 else m["topic"]
         table.add_row(
             m["topic_id"],
-            m["topic"],
+            mode_label,
+            topic_display,
             f"[{color}]{m['status']}[/{color}]",
             str(m["session_count"]),
             m["created_at"][:16].replace("T", " "),
@@ -261,17 +277,64 @@ def list_cmd():
 @click.argument("topic_id")
 @click.option("--proposal", is_flag=True, help="Show latest proposal")
 @click.option("--minutes", is_flag=True, help="Show latest minutes")
-def show(topic_id, proposal, minutes):
-    """Show details of a meeting."""
+@click.option("--output", is_flag=True, help="Show final output (for discuss mode)")
+def show(topic_id, proposal, minutes, output):
+    """Show details of a meeting or discussion."""
     config = Config(CONFIG_DIR)
+
+    # Try to load as discussion first
+    try:
+        discussion = load_discussion(topic_id, BASE_DIR)
+        _show_discussion(discussion, config, output)
+        return
+    except (FileNotFoundError, ValueError):
+        pass
+
+    # Try to load as meeting
     try:
         meeting = load_meeting(topic_id, BASE_DIR)
+        _show_meeting(meeting, config, proposal, minutes)
     except FileNotFoundError:
         console.print(f"[red]未找到议题: {topic_id}[/red]")
         sys.exit(1)
 
+
+def _show_discussion(discussion, config, show_output):
+    """Display discussion details."""
+    console.print(f"\n[bold]想法：[/bold]{discussion.user_idea[:60]}{'...' if len(discussion.user_idea) > 60 else ''}")
+    console.print(f"[bold]ID：[/bold]{discussion.topic_id}")
+    console.print(f"[bold]类型：[/bold][讨论模式]")
+    console.print(f"[bold]状态：[/bold]{discussion.status}")
+
+    if discussion.moderator:
+        mod_name = config.get_agent(discussion.moderator).name if discussion.moderator in config.agents else discussion.moderator
+        console.print(f"[bold]主持人：[/bold]{mod_name}")
+
+    console.print(f"[bold]创建：[/bold]{discussion.created_at[:16].replace('T', ' ')}")
+    console.print(f"[bold]共 {len(discussion.phases)} 个阶段[/bold]\n")
+
+    for p in discussion.phases:
+        phase_names = {
+            "independent": "独立发言",
+            "discussion": "讨论",
+            "synthesis": "综合输出",
+        }
+        phase_name = phase_names.get(p.phase_type, p.phase_type)
+        console.print(f"  Phase {p.phase_index}: [cyan]{phase_name}[/cyan] | {len(p.rounds)} 轮")
+
+    if discussion.user_feedbacks:
+        console.print(f"\n[bold]用户反馈：[/bold] {len(discussion.user_feedbacks)} 条")
+
+    if show_output and discussion.final_output:
+        console.print("\n[bold]最终输出：[/bold]")
+        console.print(Markdown(discussion.final_output))
+
+
+def _show_meeting(meeting, config, proposal, minutes):
+    """Display meeting details."""
     console.print(f"\n[bold]议题：[/bold]{meeting.topic}")
     console.print(f"[bold]ID：[/bold]{meeting.topic_id}")
+    console.print(f"[bold]类型：[/bold][会议模式]")
     console.print(f"[bold]状态：[/bold]{meeting.status}")
     console.print(f"[bold]创建：[/bold]{meeting.created_at[:16].replace('T', ' ')}")
     console.print(f"[bold]共 {len(meeting.sessions)} 个阶段[/bold]\n")
@@ -432,6 +495,77 @@ def interactive(topic, agents, strategy):
 
         console.print(f"\n[bold]会议纪要：[/bold] meetings/{topic_id}/session_{session.session_index:02d}/minutes.md")
         console.print(f"[bold]方案文档：[/bold] meetings/{topic_id}/session_{session.session_index:02d}/proposal.md")
+
+
+# ── discuss ────────────────────────────────────────────────────────────────────
+
+@cli.command()
+@click.argument("idea")
+@click.option("--agents", "-a", default="", help="Comma-separated agent IDs")
+@click.option("--rounds", "-r", default=3, type=int, help="Max discussion rounds")
+@click.option("--moderator", "-m", default="", help="Skip selection, specify moderator directly")
+def discuss(idea, agents, rounds, moderator):
+    """Start a discussion meeting on an IDEA (Phase 1-3 flow)."""
+    from datetime import datetime
+
+    config = Config(CONFIG_DIR)
+    runner = _make_runner(config)
+    orchestrator = _make_discussion_orchestrator(config, runner)
+
+    # Parse agents
+    if agents:
+        agent_list = [a.strip() for a in agents.split(",")]
+        for a in agent_list:
+            config.get_agent(a)  # validate
+    else:
+        agent_list = list(config.agents.keys())
+
+    topic_id = create_topic_id(idea)
+
+    console.print(f"\n[bold green]══════════════════════════════════════════════════════[/bold green]")
+    console.print(f"[bold green]  新讨论：{idea[:40]}{'...' if len(idea) > 40 else ''}[/bold green]")
+    console.print(f"[bold green]  ID: {topic_id}[/bold green]")
+    console.print(f"[bold green]══════════════════════════════════════════════════════[/bold green]\n")
+
+    # Create discussion
+    discussion = Discussion(
+        topic_id=topic_id,
+        user_idea=idea,
+        created_at=datetime.now().isoformat(),
+        agents=agent_list,
+    )
+
+    # Phase 1: Independent opinions
+    orchestrator.run_independent_phase(discussion)
+
+    # Select moderator
+    if moderator:
+        # Validate and use specified moderator
+        config.get_agent(moderator)
+        discussion.moderator = moderator
+        console.print(f"[green]✓ {config.get_agent(moderator).name} 被指定为主持人[/green]\n")
+    else:
+        orchestrator.select_moderator(discussion)
+
+    # Optional user feedback before discussion
+    console.print("[dim]（可选）补充意见或约束（直接回车跳过）:[/dim]")
+    feedback = input("> ").strip()
+    if feedback:
+        discussion.user_feedbacks.append(f"讨论前: {feedback}")
+        console.print()
+
+    # Phase 2: Discussion
+    orchestrator.run_discussion_phase(discussion, max_rounds=rounds)
+
+    # Phase 3: Synthesis
+    final_output = orchestrator.run_synthesis_phase(discussion)
+
+    # Show result
+    console.print("[bold]结果文档已保存至：[/bold]")
+    console.print(f"  meetings/{topic_id}/final_output.md\n")
+
+    # Preview
+    console.print(Markdown(final_output[:1500] + "..." if len(final_output) > 1500 else final_output))
 
 
 if __name__ == "__main__":

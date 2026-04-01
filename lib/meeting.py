@@ -332,13 +332,29 @@ def list_meetings(base_dir: Path) -> List[dict]:
         if meta_path.exists():
             try:
                 data = json.loads(meta_path.read_text(encoding="utf-8"))
-                result.append({
-                    "topic_id": data["topic_id"],
-                    "topic": data["topic"],
-                    "created_at": data["created_at"],
-                    "status": data.get("status", "draft"),
-                    "session_count": len(data.get("sessions", [])),
-                })
+                mode = data.get("mode", "meeting")
+
+                # Handle Discussion type
+                if mode == "discuss":
+                    result.append({
+                        "topic_id": data["topic_id"],
+                        "topic": data["user_idea"][:50] + "..." if len(data["user_idea"]) > 50 else data["user_idea"],
+                        "created_at": data["created_at"],
+                        "status": data.get("status", "draft"),
+                        "session_count": len(data.get("phases", [])),
+                        "mode": "discuss",
+                        "moderator": data.get("moderator", ""),
+                    })
+                else:
+                    # Handle Meeting type
+                    result.append({
+                        "topic_id": data["topic_id"],
+                        "topic": data["topic"],
+                        "created_at": data["created_at"],
+                        "status": data.get("status", "draft"),
+                        "session_count": len(data.get("sessions", [])),
+                        "mode": "meeting",
+                    })
             except Exception:
                 pass
     return result
