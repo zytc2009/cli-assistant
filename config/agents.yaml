@@ -1,0 +1,58 @@
+agents:
+  # ── Claude Code CLI ──
+  claude-opus:
+    name: "Claude Opus"
+    cli: claude
+    model: claude-opus-4-6
+    command: 'claude -p "{prompt_file}" --model claude-opus-4-6 --output-format text'
+    prompt_method: file
+    max_tokens: 4000
+    timeout: 180
+    strengths: "深度推理、架构设计、安全性"
+    cost_tier: high
+
+  claude-sonnet:
+    name: "Claude Sonnet"
+    cli: claude
+    model: claude-sonnet-4-6
+    command: 'claude -p "{prompt_file}" --model claude-sonnet-4-6 --output-format text'
+    prompt_method: file
+    max_tokens: 4000
+    timeout: 120
+    strengths: "代码实现、快速迭代、性价比高"
+    cost_tier: medium
+
+  # ── Codex CLI (OpenAI) ──
+  codex-o3:
+    name: "Codex o3"
+    cli: codex
+    model: o3
+    command: 'codex -q "$(cat {prompt_file})" --model o3 --approval-mode full-auto'
+    prompt_method: file
+    max_tokens: 4000
+    timeout: 180
+    strengths: "复杂推理、数学、算法"
+    cost_tier: high
+
+  codex-o4-mini:
+    name: "Codex o4-mini"
+    cli: codex
+    model: o4-mini
+    command: 'codex -q "$(cat {prompt_file})" --model o4-mini --approval-mode full-auto'
+    prompt_method: file
+    max_tokens: 4000
+    timeout: 90
+    strengths: "工程实现、性能优化、成本低"
+    cost_tier: low
+
+  # ── Kimi CLI ──
+  kimi:
+    name: "Kimi"
+    cli: kimi
+    model: moonshot-v1-128k
+    command: 'kimi chat --model moonshot-v1-128k --file {prompt_file}'
+    prompt_method: file
+    max_tokens: 4000
+    timeout: 120
+    strengths: "产品视角、用户体验、中文场景、长上下文"
+    cost_tier: medium

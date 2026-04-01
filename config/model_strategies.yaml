@@ -1,0 +1,39 @@
+model_strategies:
+  # 重要决策：全用顶级模型
+  high_stakes:
+    brainstorm: [claude-opus, codex-o3, kimi]
+    review: [claude-opus, codex-o3, kimi]
+    decision: [claude-opus, codex-o3, kimi]
+
+  # 日常讨论：发散用强模型，细化用快模型
+  balanced:
+    brainstorm: [claude-opus, codex-o3, kimi]
+    review: [claude-sonnet, codex-o4-mini, kimi]
+    decision: [claude-opus, codex-o3, kimi]
+
+  # 省钱模式：全用轻量模型
+  budget:
+    brainstorm: [claude-sonnet, codex-o4-mini, kimi]
+    review: [claude-sonnet, codex-o4-mini, kimi]
+    decision: [claude-sonnet, codex-o4-mini, kimi]
+
+presets:
+  tech_selection:
+    description: "技术选型"
+    sessions: [brainstorm, review, decision]
+    default_strategy: balanced
+
+  code_review:
+    description: "代码评审"
+    sessions: [review]
+    default_strategy: balanced
+
+  architecture:
+    description: "架构设计"
+    sessions: [brainstorm, brainstorm, review, decision]
+    default_strategy: high_stakes
+
+  postmortem:
+    description: "事故复盘"
+    sessions: [brainstorm, decision]
+    default_strategy: balanced

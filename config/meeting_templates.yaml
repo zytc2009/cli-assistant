@@ -1,0 +1,28 @@
+templates:
+  brainstorm:
+    description: "发散思维，收集各方观点"
+    max_rounds: 3
+    speaking_order: round_robin
+    round_rules:
+      1: "各自独立提出方案，不参考他人"
+      2: "回应其他人的方案，指出优缺点"
+      3: "尝试融合各方优点，提出改进方案"
+    output: proposal
+
+  review:
+    description: "对已有方案进行评审和改进"
+    max_rounds: 2
+    speaking_order: round_robin
+    round_rules:
+      1: "从自身擅长领域审视方案，指出问题"
+      2: "针对提出的问题给出具体修改建议"
+    output: revised_proposal
+
+  decision:
+    description: "收敛到最终方案"
+    max_rounds: 2
+    speaking_order: round_robin
+    round_rules:
+      1: "对修订方案做最终评估，列出剩余顾虑"
+      2: "回应顾虑，确认或调整，明确标注 [AGREE] 或 [DISAGREE:原因]"
+    output: final_proposal
