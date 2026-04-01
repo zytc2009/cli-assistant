@@ -263,17 +263,125 @@ kimi:
 
 ## 使用指南
 
+### 交互式向导（推荐）
+
+直接运行 `council`（或 `python council.py`）进入交互式向导，5 步完成讨论配置：
+
+```bash
+$ python council.py
+
+══════════════════════════════════════════════════════
+  🤖 Multi-AI Discussion Council
+══════════════════════════════════════════════════════
+
+[第1步] 请输入您的问题/想法（直接回车结束输入）：
+> 我想设计一个事件驱动的微服务架构
+> 用于处理电商订单流程
+
+[第2步] 检测本地可用的 AI CLI...
+  [✓] claude      - Claude Code (2.1.86)
+  [✓] codex       - OpenAI Codex (0.117.0)
+  [✗] gemini      - Google Gemini (未安装)
+  [✓] kimi        - Moonshot Kimi (1.28.0)
+
+[第3步] 选择参与讨论的 AI（输入编号，多个用逗号分隔）：
+  [1] claude      - 深度推理、架构设计、代码实现
+  [2] codex       - 复杂推理、数学、算法、工程实现
+  [3] kimi        - 产品视角、用户体验、中文场景、长上下文
+选择: 1,2,3
+
+[第4步] 选择主持人：
+  [1] Claude Sonnet - 擅长：架构设计、系统性分析
+  [2] Codex o4-mini - 擅长：工程实现、性能优化
+  [3] Moonshot Kimi - 擅长：产品视角、用户体验
+选择: 1
+
+[第5步] 讨论配置：
+  最大轮次 [3]: 2
+
+══════════════════════════════════════════════════════
+  讨论开始
+══════════════════════════════════════════════════════
+
+Phase 1: 收集各方观点
+[claude] 正在思考...
+────────────────────────────────────────────────────
+> 从架构设计角度，我建议采用 CQRS + Event Sourcing...
+────────────────────────────────────────────────────
+✓ 完成 (12.3s)
+...
+```
+
+---
+
 ### 命令一览
 
 ```
-council.py new          发起新议题（单阶段或预设流程）
-council.py continue     继续已有议题的下一阶段
-council.py interactive  交互式菜单模式
-council.py finalize     将最新方案标记为定稿
-council.py list         列出所有历史议题
-council.py show         查看议题详情 / 方案 / 纪要
-council.py test-round   测试单个 Agent 连通性
+council                  交互式向导（无参数时自动启动）
+council.py discuss       讨论模式（Phase 1-3，实时输出）
+council.py new           发起新议题（单阶段或预设流程）
+council.py continue      继续已有议题的下一阶段
+council.py interactive   交互式菜单模式
+council.py finalize      将最新方案标记为定稿
+council.py list          列出所有历史议题
+council.py show          查看议题详情 / 方案 / 纪要
+council.py test-round    测试单个 Agent 连通性
+council.py agent         Agent 配置管理（detect/list/add/remove）
 ```
+
+---
+
+### `discuss` — 讨论模式（Phase 1-3）
+
+针对一个想法/问题，进行三阶段结构化讨论，**实时显示各 AI 的输出**：
+
+```bash
+python council.py discuss "想法/问题" [选项]
+```
+
+| 选项 | 简写 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--agents` | `-a` | 全部 | 逗号分隔的 Agent ID |
+| `--rounds` | `-r` | 3 | Phase 2 最大讨论轮次 |
+| `--moderator` | `-m` | — | 指定主持人（默认自动选择） |
+
+**示例**
+
+```bash
+# 最简：使用所有配置好的 AI
+python council.py discuss "如何设计一个高并发的订单系统"
+
+# 指定参与者和轮次
+python council.py discuss "API 限流方案" -a claude-sonnet,codex,kimi -r 2
+
+# 指定主持人
+python council.py discuss "数据库分片策略" -a claude-sonnet,codex -m claude-sonnet
+```
+
+**讨论流程**
+
+```
+Phase 1: 独立发言
+├── 所有 AI 并行发表独立观点（避免锚定效应）
+└── 每个 AI 输出实时显示
+
+Phase 2: 讨论
+├── 主持人引导多轮讨论
+├── AI 依次回应，形成对话
+└── 每轮结束可补充用户意见
+
+Phase 3: 综合输出
+└── 主持人生成结构化最终文档
+```
+
+**与 `new` 模式的区别**
+
+| | `discuss` | `new` |
+|---|-----------|-------|
+| 流程 | 固定三阶段 | 可配置多 Session |
+| 输出 | 实时流式显示 | 批量结束后显示 |
+| 适用 | 快速讨论一个想法 | 复杂多阶段会议 |
+| 交互 | 轻量级 | 完整会议纪要 |
 
 ---
 
@@ -408,6 +516,73 @@ python council.py test-round "测试议题" --agent kimi
 
 ---
 
+### `agent` — Agent 配置管理
+
+管理 `config/agents.yaml` 中的 AI CLI 配置。
+
+#### `agent detect` — 检测本地 CLI
+
+自动扫描已安装的 AI CLI：
+
+```bash
+$ python council.py agent detect
+
+  CLI          名称                  状态          版本         擅长领域
+─────────────────────────────────────────────────────────────────────────────────
+  claude       Claude Code           ✓ 已安装      2.1.86       深度推理、架构设计
+  codex        OpenAI Codex          ✓ 已安装      0.117.0      复杂推理、数学
+  gemini       Google Gemini         ✗ 未安装      -            多模态理解
+  kimi         Moonshot Kimi         ✓ 已安装      1.28.0       产品视角、中文场景
+
+检测到 3 个已安装 CLI
+```
+
+#### `agent list` — 列出配置
+
+```bash
+$ python council.py agent list
+
+  Agent ID        名称                  CLI          模型                  成本      超时
+────────────────────────────────────────────────────────────────────────────────────────────
+  claude-opus     Claude Opus           claude       claude-opus-4-6       high      180s
+  claude-sonnet   Claude Sonnet         claude       claude-sonnet-4-6     medium    120s
+  codex-o3        Codex o3              codex        o3                    high      180s
+  ...
+```
+
+#### `agent add` — 添加 Agent
+
+交互式添加新 Agent 到配置：
+
+```bash
+# 添加已知 CLI（自动填充命令和擅长领域）
+$ python council.py agent add claude
+添加已知 CLI: Claude Code
+命令: claude -p "{prompt_file}" --output-format text
+擅长: 深度推理、架构设计、代码实现
+显示名称 [Claude Code]:
+✓ 已添加 Claude Code 到 agents.yaml
+
+# 添加自定义 CLI
+$ python council.py agent add my-custom-cli
+添加自定义 CLI: my-custom-cli
+显示名称: My Custom AI
+命令模板（使用 {prompt_file} 作为 prompt 文件占位符）:
+命令: myai -f {prompt_file}
+擅长领域 [通用能力]: 自然语言处理
+✓ 已添加 My Custom AI 到 agents.yaml
+```
+
+#### `agent remove` — 删除 Agent
+
+```bash
+$ python council.py agent remove kimi
+确认删除 'Kimi' (kimi)? [y/N]: y
+✓ 已删除 Kimi
+```
+
+---
+
 ## 配置说明
 
 ### Agent 注册（`config/agents.yaml`）
@@ -500,40 +675,44 @@ python council.py test-round "测试议题" --agent kimi
 
 ```
 ai-council/
-├── council.py                  # CLI 入口（click 命令组）
+├── council.py                    # CLI 入口（click 命令组）
 ├── requirements.txt
-├── README.md                   # 本文件
-├── ARCHITECTURE.md             # 技术架构文档
+├── README.md                     # 本文件
+├── ARCHITECTURE.md               # 技术架构文档
 │
 ├── config/
-│   ├── agents.yaml             # Agent CLI 注册与参数
-│   ├── meeting_templates.yaml  # 会议阶段模板
-│   ├── model_strategies.yaml   # 模型策略 + 预设流程
+│   ├── agents.yaml               # Agent CLI 注册与参数
+│   ├── meeting_templates.yaml    # 会议阶段模板
+│   ├── model_strategies.yaml     # 模型策略 + 预设流程
 │   └── prompts/
-│       ├── base_system.md      # 主 prompt 模板
+│       ├── base_system.md        # 主 prompt 模板
 │       ├── minutes_generator.md
 │       ├── proposal_generator.md
 │       ├── summarizer.md
 │       └── consensus_detector.md
 │
 ├── lib/
-│   ├── config.py               # 配置加载、数据类、校验
-│   ├── agent_runner.py         # subprocess CLI 调用封装
-│   ├── prompt_builder.py       # prompt 组装（历史注入）
-│   ├── meeting.py              # 会议状态 + JSON 持久化
-│   ├── orchestrator.py         # 核心会议循环
-│   ├── summarizer.py           # 纪要 + 方案文档生成
-│   ├── consensus.py            # 共识检测
-│   └── context.py              # 上下文压缩
+│   ├── config.py                 # 配置加载、数据类、校验
+│   ├── agent_runner.py           # subprocess CLI 调用封装
+│   ├── streaming_runner.py       # 实时流式输出 runner
+│   ├── prompt_builder.py         # prompt 组装（历史注入）
+│   ├── meeting.py                # 会议/讨论状态 + JSON 持久化
+│   ├── orchestrator.py           # 核心会议循环（new/continue）
+│   ├── discussion_orchestrator.py # 讨论编排器（discuss 模式）
+│   ├── summarizer.py             # 纪要 + 方案文档生成
+│   ├── consensus.py              # 共识检测
+│   ├── context.py                # 上下文压缩
+│   ├── cli_detector.py           # CLI 自动检测
+│   └── streaming_runner.py       # 实时流式输出 runner
 │
-└── meetings/                   # 会议记录（自动生成）
+└── meetings/                     # 会议记录（自动生成）
     └── {topic_id}/
-        ├── meeting.json        # 元数据
-        ├── topic.md            # 议题描述
-        ├── final_proposal.md   # 定稿方案
+        ├── meeting.json          # 元数据
+        ├── topic.md              # 议题描述
+        ├── final_proposal.md     # 定稿方案
         └── session_01/
-            ├── minutes.md      # 会议纪要
-            ├── proposal.md     # 本阶段方案
+            ├── minutes.md        # 会议纪要
+            ├── proposal.md       # 本阶段方案
             └── raw/
                 ├── round_01_claude-sonnet.md
                 ├── round_01_codex.md
@@ -544,7 +723,19 @@ ai-council/
 
 ## 扩展指南
 
-### 添加新 Agent（3 步）
+### 添加新 Agent
+
+**方式一：使用命令（推荐）**
+
+```bash
+# 添加已知 CLI（自动填充配置）
+python council.py agent add claude
+
+# 添加自定义 CLI
+python council.py agent add my-ai
+```
+
+**方式二：手动编辑配置**
 
 **第一步**：在 `config/agents.yaml` 中添加条目，确保命令包含 `{prompt_file}`
 
@@ -584,7 +775,7 @@ templates:
 
 **Q: `test-round` 报"Unknown agent"？**
 
-检查 `config/agents.yaml` 中的 Agent ID 拼写，用 `python council.py agent list`（待实现）或直接查看 yaml 文件确认 ID。
+检查 `config/agents.yaml` 中的 Agent ID 拼写，用 `python council.py agent list` 查看可用 ID。
 
 **Q: Claude 在 Windows 上报"requires git-bash"？**
 

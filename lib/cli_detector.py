@@ -138,3 +138,84 @@ def format_cli_status(cli: CLIDetected) -> str:
     status_icon = "✓" if cli.is_installed else "✗"
     version_str = f" ({cli.version})" if cli.version else ""
     return f"[{status_icon}] {cli.cli_id:<10} - {cli.name}{version_str}"
+
+
+def save_detected_clis_to_config(detected_clis: List[CLIDetected], config_path: Path) -> None:
+    """Save detected CLIs to agents.yaml config file.
+
+    Only adds CLIs that are not already present in the config.
+    """
+    import yaml
+
+    # Load existing config if exists
+    if config_path.exists():
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = yaml.safe_load(f) or {}
+    else:
+        config = {"agents": {}}
+
+    if "agents" not in config:
+        config["agents"] = {}
+
+    # Add detected CLIs that are not already in config
+    for cli in detected_clis:
+        if cli.is_installed and cli.cli_id not in config["agents"]:
+            config["agents"][cli.cli_id] = {
+                "name": cli.name,
+                "cli": cli.cli_id,
+                "command": cli.command,
+                "prompt_method": "file",
+                "max_tokens": 4000,
+                "timeout": 120,
+                "strengths": cli.strengths,
+                "cost_tier": "medium",
+            }
+
+    # Save back to file
+    with open(config_path, "w", encoding="utf-8") as f:
+        yaml.dump(config, f, allow_unicode=True, sort_keys=False)
+
+
+def add_custom_cli_to_config(
+    cli_id: str,
+    name: str,
+    command: str,
+    strengths: str,
+    config_path: Path,
+) -> bool:
+    """Add a custom CLI configuration to agents.yaml.
+
+    Returns True if successful, False otherwise.
+    """
+    import yaml
+
+    try:
+        # Load existing config if exists
+        if config_path.exists():
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = yaml.safe_load(f) or {}
+        else:
+            config = {"agents": {}}
+
+        if "agents" not in config:
+            config["agents"] = {}
+
+        # Add or update the CLI config
+        config["agents"][cli_id] = {
+            "name": name,
+            "cli": cli_id,
+            "command": command,
+            "prompt_method": "file",
+            "max_tokens": 4000,
+            "timeout": 120,
+            "strengths": strengths,
+            "cost_tier": "medium",
+        }
+
+        # Save back to file
+        with open(config_path, "w", encoding="utf-8") as f:
+            yaml.dump(config, f, allow_unicode=True, sort_keys=False)
+
+        return True
+    except Exception:
+        return False

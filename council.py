@@ -207,10 +207,54 @@ def _confirm_config() -> dict:
     return config
 
 
+def _input_manual_cli() -> Optional[tuple]:
+    """Prompt user to manually input a CLI configuration.
+
+    Returns:
+        Tuple of (cli_id, name, command, strengths) or None if cancelled
+    """
+    console.print("\n[yellow]未检测到任何 AI CLI，请手动配置[/yellow]")
+    console.print("[dim]提示：输入命令名称和路径，或按 Ctrl+C 取消\n[/dim]")
+
+    try:
+        cli_id = console.input("CLI ID (如 claude/codex/kimi): ").strip()
+        if not cli_id:
+            return None
+
+        name = console.input(f"显示名称 [{cli_id}]: ").strip() or cli_id
+
+        console.print("命令模板（使用 {prompt_file} 作为 prompt 文件占位符）:")
+        console.print("  示例: claude -p \"{prompt_file}\" --output-format text")
+        command = console.input("命令: ").strip()
+        if not command:
+            return None
+
+        strengths = console.input("擅长领域 [通用能力]: ").strip() or "通用能力"
+
+        # Verify the command exists
+        import shutil
+        cmd_first = command.split()[0]
+        if shutil.which(cmd_first) is None:
+            console.print(f"[red]警告：命令 '{cmd_first}' 不在 PATH 中[/red]")
+            confirm = console.input("是否仍要添加? [y/N]: ").strip().lower()
+            if confirm != 'y':
+                return None
+
+        return (cli_id, name, command, strengths)
+
+    except (KeyboardInterrupt, EOFError):
+        return None
+
+
 def _run_interactive_wizard():
     """Run the interactive wizard when no command is provided."""
     from datetime import datetime
-    from lib.cli_detector import CLIDetector
+    from lib.cli_detector import (
+        CLIDetector,
+        add_custom_cli_to_config,
+        format_cli_status,
+        save_detected_clis_to_config,
+    )
     from lib.streaming_runner import StreamingRunner
 
     # Welcome header
@@ -230,15 +274,45 @@ def _run_interactive_wizard():
     all_clis = detector.detect_all()
 
     for cli in all_clis:
-        from lib.cli_detector import format_cli_status
         console.print(f"  {format_cli_status(cli)}")
 
     installed = [cli for cli in all_clis if cli.is_installed]
 
+    # Fallback: manual input if no CLIs detected
     if not installed:
-        console.print("\n[red]错误：未检测到任何可用的 AI CLI[/red]")
-        console.print("[dim]请确保已安装至少一个 AI CLI（claude, codex, kimi, gemini）[/dim]")
-        return
+        console.print("\n[yellow]未检测到已知的 AI CLI[/yellow]")
+        manual_cli = _input_manual_cli()
+        if manual_cli:
+            cli_id, name, command, strengths = manual_cli
+            # Add to agents.yaml
+            agents_yaml_path = CONFIG_DIR / "agents.yaml"
+            if add_custom_cli_to_config(cli_id, name, command, strengths, agents_yaml_path):
+                console.print(f"[green]✓ 已添加 {name} 到配置[/green]\n")
+                # Create a CLIDetected object for the manual CLI
+                from lib.cli_detector import CLIDetected
+                installed = [CLIDetected(
+                    cli_id=cli_id,
+                    name=name,
+                    version="",
+                    is_installed=True,
+                    command=command,
+                    check_cmd="",
+                    strengths=strengths,
+                )]
+            else:
+                console.print("[red]添加配置失败[/red]")
+                return
+        else:
+            console.print("[yellow]未配置任何 CLI，退出[/yellow]")
+            return
+
+    # Save detected CLIs to config
+    agents_yaml_path = CONFIG_DIR / "agents.yaml"
+    try:
+        save_detected_clis_to_config(installed, agents_yaml_path)
+        console.print(f"[dim]已更新配置: {agents_yaml_path}\n[/dim]")
+    except Exception as e:
+        console.print(f"[dim yellow]保存配置警告: {e}[/dim yellow]")
 
     # Step 3: Select CLIs
     selected_ids = _select_clis(all_clis)
@@ -835,6 +909,163 @@ def discuss(idea, agents, rounds, moderator):
 
     # Preview
     console.print(Markdown(final_output[:1500] + "..." if len(final_output) > 1500 else final_output))
+
+
+# ── agent command group ─────────────────────────────────────────────────────────
+
+@cli.group("agent")
+def agent_cmd():
+    """Manage AI CLI agents configuration."""
+    pass
+
+
+@agent_cmd.command("detect")
+def agent_detect():
+    """Auto-detect locally installed AI CLIs."""
+    from lib.cli_detector import CLIDetector, format_cli_status
+
+    console.print("\n[bold]检测本地 AI CLI...[/bold]\n")
+
+    detector = CLIDetector()
+    all_clis = detector.detect_all()
+
+    table = Table(show_header=True, header_style="bold cyan")
+    table.add_column("CLI", width=12)
+    table.add_column("名称", width=20)
+    table.add_column("状态", width=12)
+    table.add_column("版本", width=12)
+    table.add_column("擅长领域", width=25)
+
+    for cli in all_clis:
+        status = "[green]✓ 已安装[/green]" if cli.is_installed else "[red]✗ 未安装[/red]"
+        version = cli.version or "-"
+        table.add_row(cli.cli_id, cli.name, status, version, cli.strengths)
+
+    console.print(table)
+
+    installed = [cli for cli in all_clis if cli.is_installed]
+    if installed:
+        console.print(f"\n[green]检测到 {len(installed)} 个已安装 CLI[/green]")
+    else:
+        console.print("\n[yellow]未检测到已安装的 AI CLI[/yellow]")
+
+
+@agent_cmd.command("list")
+def agent_list():
+    """List currently configured agents."""
+    config = Config(CONFIG_DIR)
+
+    table = Table(show_header=True, header_style="bold cyan")
+    table.add_column("Agent ID", width=15)
+    table.add_column("名称", width=20)
+    table.add_column("CLI", width=12)
+    table.add_column("模型", width=18)
+    table.add_column("成本", width=8)
+    table.add_column("超时", justify="right", width=6)
+
+    cost_colors = {
+        "high": "red",
+        "medium": "yellow",
+        "low": "green",
+    }
+
+    for agent_id, agent in config.agents.items():
+        cost_color = cost_colors.get(agent.cost_tier, "white")
+        table.add_row(
+            agent_id,
+            agent.name,
+            agent.cli,
+            agent.model or "-",
+            f"[{cost_color}]{agent.cost_tier}[/{cost_color}]",
+            f"{agent.timeout}s",
+        )
+
+    console.print(table)
+    console.print(f"\n共 {len(config.agents)} 个配置")
+
+
+@agent_cmd.command("add")
+@click.argument("cli_id")
+def agent_add(cli_id):
+    """Add a CLI to agents.yaml interactively."""
+    from lib.cli_detector import CLIDetector, add_custom_cli_to_config
+
+    detector = CLIDetector()
+
+    # Check if it's a known CLI
+    if cli_id in detector.KNOWN_CLIS:
+        info = detector.KNOWN_CLIS[cli_id]
+        detected = detector.detect_one(cli_id)
+
+        console.print(f"\n[bold]添加已知 CLI: {info['name']}[/bold]")
+        console.print(f"命令: {info['command']}")
+        console.print(f"擅长: {info['strengths']}")
+
+        # Allow customization
+        name = console.input(f"显示名称 [{info['name']}]: ").strip() or info['name']
+        command = console.input(f"命令 [{info['command']}]: ").strip() or info['command']
+        strengths = console.input(f"擅长领域 [{info['strengths']}]: ").strip() or info['strengths']
+
+        # Check if command exists
+        import shutil
+        cmd_first = command.split()[0]
+        if shutil.which(cmd_first) is None:
+            console.print(f"[yellow]警告: '{cmd_first}' 不在 PATH 中[/yellow]")
+            if not click.confirm("仍要添加?"):
+                return
+    else:
+        console.print(f"\n[bold]添加自定义 CLI: {cli_id}[/bold]")
+        name = console.input("显示名称: ").strip()
+        if not name:
+            console.print("[red]名称不能为空[/red]")
+            return
+
+        console.print("命令模板（使用 {prompt_file} 作为 prompt 文件占位符）:")
+        command = console.input("命令: ").strip()
+        if not command:
+            console.print("[red]命令不能为空[/red]")
+            return
+
+        strengths = console.input("擅长领域 [通用能力]: ").strip() or "通用能力"
+
+    # Add to config
+    agents_yaml_path = CONFIG_DIR / "agents.yaml"
+    if add_custom_cli_to_config(cli_id, name, command, strengths, agents_yaml_path):
+        console.print(f"[green]✓ 已添加 {name} 到 agents.yaml[/green]")
+    else:
+        console.print("[red]添加失败[/red]")
+
+
+@agent_cmd.command("remove")
+@click.argument("agent_id")
+def agent_remove(agent_id):
+    """Remove an agent from agents.yaml."""
+    import yaml
+
+    agents_yaml_path = CONFIG_DIR / "agents.yaml"
+
+    # Load existing config
+    with open(agents_yaml_path, "r", encoding="utf-8") as f:
+        config = yaml.safe_load(f) or {}
+
+    if "agents" not in config or agent_id not in config["agents"]:
+        console.print(f"[red]Agent '{agent_id}' 不存在[/red]")
+        return
+
+    agent_name = config["agents"][agent_id].get("name", agent_id)
+
+    if not click.confirm(f"确认删除 '{agent_name}' ({agent_id})?"):
+        console.print("[dim]已取消[/dim]")
+        return
+
+    # Remove agent
+    del config["agents"][agent_id]
+
+    # Save back
+    with open(agents_yaml_path, "w", encoding="utf-8") as f:
+        yaml.dump(config, f, allow_unicode=True, sort_keys=False)
+
+    console.print(f"[green]✓ 已删除 {agent_name}[/green]")
 
 
 if __name__ == "__main__":

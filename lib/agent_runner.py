@@ -36,8 +36,10 @@ class AgentRunner:
             )
 
         prompt_file = None
+        output_file = None
         start = time.time()
         try:
+            # Create temp file for prompt
             with tempfile.NamedTemporaryFile(
                 mode="w",
                 suffix=".md",
@@ -48,6 +50,17 @@ class AgentRunner:
                 prompt_file = f.name
 
             cmd = agent.command.replace("{prompt_file}", prompt_file)
+
+            # Handle output to file (e.g., codex -o flag)
+            if "{output_file}" in cmd:
+                with tempfile.NamedTemporaryFile(
+                    mode="w",
+                    suffix=".md",
+                    delete=False,
+                    encoding="utf-8",
+                ) as f:
+                    output_file = f.name
+                cmd = cmd.replace("{output_file}", output_file)
 
             result = subprocess.run(
                 cmd,
@@ -61,10 +74,19 @@ class AgentRunner:
 
             duration = time.time() - start
 
-            if result.returncode == 0 and result.stdout.strip():
+            # Determine output source
+            if output_file and Path(output_file).exists():
+                try:
+                    output_content = Path(output_file).read_text(encoding="utf-8")
+                except Exception:
+                    output_content = result.stdout.strip()
+            else:
+                output_content = result.stdout.strip()
+
+            if result.returncode == 0 and output_content:
                 return AgentResponse(
                     agent=agent_name,
-                    content=result.stdout.strip(),
+                    content=output_content,
                     success=True,
                     error=None,
                     duration_seconds=duration,
@@ -73,7 +95,7 @@ class AgentRunner:
                 error_msg = result.stderr.strip() or f"Exit code {result.returncode}, empty output"
                 return AgentResponse(
                     agent=agent_name,
-                    content=result.stdout.strip() or "[本轮缺席：调用失败]",
+                    content=output_content or "[本轮缺席：调用失败]",
                     success=False,
                     error=error_msg,
                     duration_seconds=duration,
@@ -101,6 +123,11 @@ class AgentRunner:
             if prompt_file:
                 try:
                     Path(prompt_file).unlink(missing_ok=True)
+                except Exception:
+                    pass
+            if output_file:
+                try:
+                    Path(output_file).unlink(missing_ok=True)
                 except Exception:
                     pass
 

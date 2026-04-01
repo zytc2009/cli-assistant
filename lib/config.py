@@ -20,10 +20,12 @@ class AgentConfig:
     timeout: int
     strengths: str
     cost_tier: str
+    output_method: str = "stdout"
+    output_file: str = ""
 
     def validate(self, agent_id: str) -> None:
-        if "{prompt_file}" not in self.command:
-            raise ValueError(f"Agent '{agent_id}' command must contain {{prompt_file}}")
+        if "{prompt_file}" not in self.command and "{prompt_content}" not in self.command:
+            raise ValueError(f"Agent '{agent_id}' command must contain {{prompt_file}} or {{prompt_content}}")
         if self.timeout <= 0:
             raise ValueError(f"Agent '{agent_id}' timeout must be > 0")
 
@@ -69,6 +71,8 @@ def load_agents(path: Path) -> Dict[str, AgentConfig]:
             timeout=cfg.get("timeout", 120),
             strengths=cfg.get("strengths", ""),
             cost_tier=cfg.get("cost_tier", "medium"),
+            output_method=cfg.get("output_method", "stdout"),
+            output_file=cfg.get("output_file", ""),
         )
         agent.validate(agent_id)
         agents[agent_id] = agent

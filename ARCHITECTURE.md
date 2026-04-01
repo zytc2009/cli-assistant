@@ -24,25 +24,29 @@
 ```
 ┌──────────────────────────────────────────────────────────┐
 │                     council.py (CLI)                      │
-│  new / continue / interactive / finalize / list / show   │
+│  discuss / new / continue / interactive / finalize /     │
+│  list / show / test-round / agent (detect/list/add/remove)│
 └────────────────────────┬─────────────────────────────────┘
                          │
-                         ▼
-┌──────────────────────────────────────────────────────────┐
-│                   Orchestrator                            │
-│  · 控制会议轮次流程                                        │
-│  · 第 1 轮并行调用 / 后续轮次顺序调用                       │
-│  · 每轮后触发共识检测                                      │
-│  · Session 结束后生成纪要和方案                            │
-└───┬───────────────┬───────────────┬──────────────────────┘
-    │               │               │
-    ▼               ▼               ▼
-AgentRunner   PromptBuilder    Summarizer / Consensus
-(subprocess)  (模板 + 历史)    (调用 LLM 生成结构化输出)
-    │
-    ▼
-各 AI CLI 进程
-(claude / codex / kimi / ...)
+         ┌───────────────┼───────────────┐
+         ▼               ▼               ▼
+  ┌──────────────┐ ┌─────────────┐ ┌──────────────┐
+  │  Interactive │ │ Discussion  │ │  Meeting     │
+  │   Wizard     │ │Orchestrator │ │Orchestrator  │
+  │  (no args)   │ │  (discuss)  │ │ (new/cont)   │
+  └──────┬───────┘ └──────┬──────┘ └──────┬───────┘
+         │                │               │
+         └────────────────┼───────────────┘
+                          ▼
+        ┌─────────────────────────────────┐
+        │      StreamingRunner /          │
+        │       AgentRunner               │
+        │  (real-time / batch output)     │
+        └──────────────┬──────────────────┘
+                       │
+                       ▼
+              各 AI CLI 进程
+         (claude / codex / kimi / ...)
 ```
 
 ---
@@ -168,6 +172,74 @@ Gemini 通过 stdin 管道（`cat {prompt_file} | gemini -p " " --yolo`）规避
 
 ---
 
+### `lib/streaming_runner.py` — 实时流式输出
+
+为交互式向导和 discuss 模式提供**实时逐行输出**的能力，让用户看到 AI 正在思考的过程。
+
+```python
+class StreamingRunner:
+    def invoke_streaming(agent_name, prompt_content, on_output=None) -> AgentResponse
+```
+
+**与 AgentRunner 的区别**
+
+| | `AgentRunner` | `StreamingRunner` |
+|---|---------------|-------------------|
+| 输出时机 | 进程结束后一次性返回 | 每行输出实时打印 |
+| 适用场景 | batch 模式（new/continue） | 交互模式（discuss/向导） |
+| 用户体验 | 等待...然后看结果 | 实时看到 AI 思考过程 |
+| 内部实现 | `subprocess.run()` | `subprocess.Popen()` + iter |
+
+**流式输出原理**
+
+```python
+process = subprocess.Popen(
+    cmd, shell=True, stdout=subprocess.PIPE, bufsize=1  # 行缓冲
+)
+
+for line in iter(process.stdout.readline, ''):
+    line = line.rstrip('\n\r')
+    output_lines.append(line)
+    console.print(f"> {line}")  # 实时打印
+    if on_output:
+        on_output(line)  # 回调通知
+```
+
+---
+
+### `lib/cli_detector.py` — CLI 自动检测
+
+自动检测本地安装的 AI CLI 工具，支持配置持久化。
+
+```python
+class CLIDetector:
+    KNOWN_CLIS = {
+        "claude": {"name": "Claude Code", "command": "...", ...},
+        "codex": {"name": "OpenAI Codex", ...},
+        "kimi": {"name": "Moonshot Kimi", ...},
+        "gemini": {"name": "Google Gemini", ...},
+    }
+
+    def detect_all() -> List[CLIDetected]  # 检测所有已知 CLI
+    def detect_one(cli_id) -> CLIDetected   # 检测单个 CLI
+```
+
+**检测逻辑**
+
+1. 使用 `shutil.which()` 检查命令是否在 PATH
+2. 执行 `--version` 获取版本号（正则提取）
+3. 返回结构化数据供后续使用
+
+**配置持久化**
+
+```python
+def save_detected_clis_to_config(detected_clis, config_path):
+    # 将检测到的 CLI 写入 agents.yaml
+    # 仅添加尚未配置的条目
+```
+
+---
+
 ### `lib/prompt_builder.py` — Prompt 组装
 
 ```python
@@ -243,7 +315,9 @@ meetings/{topic_id}/
 
 ---
 
-### `lib/orchestrator.py` — 核心会议循环
+### `lib/orchestrator.py` — 核心会议循环（传统模式）
+
+用于 `new`、`continue`、`interactive` 命令，支持多 Session 串联的完整会议流程。
 
 **`run_session()` 流程**
 
@@ -264,6 +338,60 @@ run_session(meeting, session_type, agents, prior_proposal, user_feedback)
   ├─ generate_proposal()   # 调用 LLM 生成方案
   └─ save_meeting()
 ```
+
+---
+
+### `lib/discussion_orchestrator.py` — 讨论模式编排器
+
+用于 `discuss` 命令和交互式向导，实现**三阶段结构化讨论**。
+
+**数据模型扩展**
+
+```
+Discussion
+├── topic_id: str
+├── user_idea: str          # 用户的原始想法
+├── moderator: str          # 选定的主持人 Agent
+├── phases: List[Phase]
+│   └── Phase
+│       ├── phase_type: str   # independent / discussion / synthesis
+│       ├── phase_index: int
+│       └── rounds: List[Round]
+├── user_feedbacks: List[str]
+└── final_output: str       # Phase 3 输出
+```
+
+**三阶段流程**
+
+```
+run_independent_phase_streaming(discussion, streaming_runner)
+  ├── 为每个 AI 构建独立发言 prompt
+  ├── 并行调用所有 AI（streaming，实时显示输出）
+  └── 收集所有观点到 Phase 1
+
+run_discussion_phase_streaming(discussion, streaming_runner, max_rounds)
+  ├── 主持人开场（moderator_opening）
+  ├── for round in 1..max_rounds:
+  │   ├── 各 AI 依次回应（可见历史和主持人引导）
+  │   ├── 实时流式输出每个 AI 的发言
+  │   └── 可选：用户补充意见
+  └── 收集讨论记录到 Phase 2
+
+run_synthesis_phase_streaming(discussion, streaming_runner)
+  ├── 主持人综合所有观点
+  ├── 生成结构化最终文档（streaming）
+  └── 保存到 final_output.md
+```
+
+**与传统 Orchestrator 的区别**
+
+| | `Orchestrator` | `DiscussionOrchestrator` |
+|---|----------------|--------------------------|
+| 模式 | 多 Session 串联 | 单议题三阶段 |
+| 输出 | 批量（结束后显示） | 流式（实时显示） |
+| 角色 | 无主持人概念 | 指定主持人引导讨论 |
+| 共识 | 每轮检测共识 | 无需检测，固定流程 |
+| 适用 | 复杂多阶段会议 | 快速讨论一个想法 |
 
 ---
 
