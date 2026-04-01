@@ -1,10 +1,12 @@
 """CLI detector for detecting locally installed AI CLI tools."""
 from __future__ import annotations
 
+import logging
 import re
 import shutil
 import subprocess
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, List, Optional
 
 
@@ -217,5 +219,6 @@ def add_custom_cli_to_config(
             yaml.dump(config, f, allow_unicode=True, sort_keys=False)
 
         return True
-    except Exception:
+    except (OSError, yaml.YAMLError) as e:
+        logging.warning("Failed to add CLI config for %s: %s", cli_id, e)
         return False

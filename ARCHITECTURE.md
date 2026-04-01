@@ -76,7 +76,7 @@
 **数据类**
 
 ```python
-@dataclass
+@dataclass(frozen=True)   # 不可变，防止意外 mutation
 class AgentConfig:
     name: str          # 显示名称
     cli: str           # CLI 类型标识
@@ -88,7 +88,7 @@ class AgentConfig:
     strengths: str     # 注入 prompt 的角色说明
     cost_tier: str     # high / medium / low
 
-@dataclass
+@dataclass(frozen=True)   # 需修改字段时使用 dataclasses.replace()
 class MeetingTemplate:
     description: str
     max_rounds: int
@@ -96,7 +96,7 @@ class MeetingTemplate:
     round_rules: Dict[int, str] # 每轮的发言规则
     output: str
 
-@dataclass
+@dataclass(frozen=True)
 class ModelStrategy:
     brainstorm: List[str]  # 各阶段对应的 Agent ID 列表
     review: List[str]
@@ -203,6 +203,12 @@ for line in iter(process.stdout.readline, ''):
     console.print(f"> {line}")  # 实时打印
     if on_output:
         on_output(line)  # 回调通知
+
+try:
+    return_code = process.wait(timeout=agent.timeout)  # 带超时
+except subprocess.TimeoutExpired:
+    process.kill()
+    return AgentResponse(..., error="[本轮缺席：调用超时]")
 ```
 
 ---
@@ -363,23 +369,26 @@ Discussion
 
 **三阶段流程**
 
+三个核心方法均接受可选的 `streaming_runner` 参数，流式变体（`*_streaming`）是同一实现的薄包装，公开 API 不变：
+
 ```
-run_independent_phase_streaming(discussion, streaming_runner)
-  ├── 为每个 AI 构建独立发言 prompt
-  ├── 并行调用所有 AI（streaming，实时显示输出）
+run_independent_phase(discussion, streaming_runner=None)
+  ├── 为每个 AI 构建独立发言 prompt（第 1 轮，互不可见）
+  ├── 并行调用所有 AI（streaming 时实时显示，否则批量收集）
   └── 收集所有观点到 Phase 1
 
-run_discussion_phase_streaming(discussion, streaming_runner, max_rounds)
+run_discussion_phase(discussion, max_rounds, streaming_runner=None)
   ├── 主持人开场（moderator_opening）
   ├── for round in 1..max_rounds:
   │   ├── 各 AI 依次回应（可见历史和主持人引导）
-  │   ├── 实时流式输出每个 AI 的发言
+  │   ├── 实时流式输出每个 AI 的发言（streaming 模式）
+  │   ├── 共识检测：达到 full/partial 时提前结束
   │   └── 可选：用户补充意见
   └── 收集讨论记录到 Phase 2
 
-run_synthesis_phase_streaming(discussion, streaming_runner)
-  ├── 主持人综合所有观点
-  ├── 生成结构化最终文档（streaming）
+run_synthesis_phase(discussion, streaming_runner=None)
+  ├── 主持人综合所有观点（每段回复截断至 800 字，控制 context）
+  ├── 生成结构化最终文档
   └── 保存到 final_output.md
 ```
 
@@ -390,7 +399,7 @@ run_synthesis_phase_streaming(discussion, streaming_runner)
 | 模式 | 多 Session 串联 | 单议题三阶段 |
 | 输出 | 批量（结束后显示） | 流式（实时显示） |
 | 角色 | 无主持人概念 | 指定主持人引导讨论 |
-| 共识 | 每轮检测共识 | 无需检测，固定流程 |
+| 共识 | 每轮检测，full 时提前结束 | Phase 2 每轮检测，达成后提前退出 |
 | 适用 | 复杂多阶段会议 | 快速讨论一个想法 |
 
 ---
@@ -544,8 +553,9 @@ invoke(kimi, ...)
 
 | 场景 | 处理方式 |
 |------|----------|
-| Agent CLI 调用超时 | 返回"本轮缺席"占位，重试 2 次后跳过 |
-| Agent CLI 进程崩溃 | 捕获异常，返回错误信息，继续下一个 Agent |
+| Agent CLI 调用超时（批量模式） | 返回"本轮缺席：调用超时"，重试 2 次后跳过 |
+| Agent CLI 调用超时（流式模式） | `process.wait(timeout=N)` → `TimeoutExpired` → kill 进程，返回占位 |
+| Agent CLI 进程崩溃 | 捕获异常，返回"本轮缺席：调用异常"，继续下一个 Agent |
 | 空输出 | 视为失败，触发重试 |
 | 共识检测 JSON 解析失败 | 返回 `unknown`（level=none），不中断流程 |
 | 纪要/方案生成失败 | 返回含错误信息的降级文档 |

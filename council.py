@@ -382,7 +382,7 @@ def _run_interactive_wizard():
 
     # Optional user feedback before discussion
     console.print("[dim]（可选）补充意见或约束（直接回车跳过）:[/dim]")
-    feedback = input("> ").strip()
+    feedback = console.input("> ").strip()
     if feedback:
         discussion.user_feedbacks.append(f"讨论前: {feedback}")
         console.print()
@@ -466,10 +466,11 @@ def new(topic, agents, mode, strategy, rounds, preset):
         agent_list = _parse_agents(agents, config, used_strategy, session_type)
         console.print(f"\n参会者：{', '.join(agent_list)}")
 
-        # Override max_rounds if specified
+        # Override max_rounds if specified — use dataclasses.replace() to avoid mutating shared object
         if rounds > 0:
+            import dataclasses
             template = config.get_template(session_type)
-            template.max_rounds = rounds
+            config.templates[session_type] = dataclasses.replace(template, max_rounds=rounds)
 
         session = orchestrator.run_session(
             meeting=meeting,
@@ -823,7 +824,7 @@ def interactive(topic, agents, strategy):
         feedback = ""
         if prior_proposal:
             console.print("\n[dim]（可选）输入补充意见或约束条件（直接回车跳过）：[/dim]")
-            feedback = input("> ").strip()
+            feedback = console.input("> ").strip()
 
         agent_list = _parse_agents(agents, config, strategy, session_type)
         session = orchestrator.run_session(
@@ -863,6 +864,10 @@ def discuss(idea, agents, rounds, moderator):
     else:
         agent_list = list(config.agents.keys())
 
+    if not agent_list:
+        console.print("[red]错误：没有可用的 agent，请先配置 agents.yaml 或使用 --agents 指定参与者[/red]")
+        sys.exit(1)
+
     topic_id = create_topic_id(idea)
 
     console.print(f"\n[bold green]══════════════════════════════════════════════════════[/bold green]")
@@ -892,7 +897,7 @@ def discuss(idea, agents, rounds, moderator):
 
     # Optional user feedback before discussion
     console.print("[dim]（可选）补充意见或约束（直接回车跳过）:[/dim]")
-    feedback = input("> ").strip()
+    feedback = console.input("> ").strip()
     if feedback:
         discussion.user_feedbacks.append(f"讨论前: {feedback}")
         console.print()

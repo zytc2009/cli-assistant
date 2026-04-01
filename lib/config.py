@@ -2,14 +2,14 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Dict, List, Optional
 
 import yaml
 
 
-@dataclass
+@dataclass(frozen=True)
 class AgentConfig:
     name: str
     cli: str
@@ -30,7 +30,7 @@ class AgentConfig:
             raise ValueError(f"Agent '{agent_id}' timeout must be > 0")
 
 
-@dataclass
+@dataclass(frozen=True)
 class MeetingTemplate:
     description: str
     max_rounds: int
@@ -39,7 +39,7 @@ class MeetingTemplate:
     output: str
 
 
-@dataclass
+@dataclass(frozen=True)
 class ModelStrategy:
     brainstorm: List[str] = field(default_factory=list)
     review: List[str] = field(default_factory=list)
@@ -49,7 +49,7 @@ class ModelStrategy:
         return getattr(self, session_type, [])
 
 
-@dataclass
+@dataclass(frozen=True)
 class PresetConfig:
     description: str
     sessions: List[str]

@@ -1,6 +1,7 @@
 """Streaming runner for real-time CLI output."""
 from __future__ import annotations
 
+import os
 import subprocess
 import tempfile
 import time
@@ -100,7 +101,19 @@ class StreamingRunner:
                         on_output(line)
 
             # Wait for process to complete
-            return_code = process.wait()
+            try:
+                return_code = process.wait(timeout=agent.timeout)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+                duration = time.time() - start
+                return AgentResponse(
+                    agent=agent_name,
+                    content="\n".join(output_lines) if output_lines else "[本轮缺席：调用超时]",
+                    success=False,
+                    error=f"Timeout after {agent.timeout}s",
+                    duration_seconds=duration,
+                )
             duration = time.time() - start
 
             # Get stderr if any
@@ -139,7 +152,7 @@ class StreamingRunner:
             duration = time.time() - start
             return AgentResponse(
                 agent=agent_name,
-                content="\n".join(output_lines) if output_lines else "[超时]",
+                content="\n".join(output_lines) if output_lines else "[本轮缺席：调用超时]",
                 success=False,
                 error=f"Timeout after {agent.timeout}s",
                 duration_seconds=duration,
@@ -148,7 +161,7 @@ class StreamingRunner:
             duration = time.time() - start
             return AgentResponse(
                 agent=agent_name,
-                content="\n".join(output_lines) if output_lines else "[异常]",
+                content="\n".join(output_lines) if output_lines else "[本轮缺席：调用异常]",
                 success=False,
                 error=str(e),
                 duration_seconds=duration,
@@ -156,9 +169,8 @@ class StreamingRunner:
         finally:
             if prompt_file:
                 try:
-                    import os
                     os.unlink(prompt_file)
-                except Exception:
+                except OSError:
                     pass
 
     def invoke_with_retry_streaming(
@@ -186,7 +198,7 @@ class StreamingRunner:
 
         return last_response or AgentResponse(
             agent=agent_name,
-            content="[调用失败]",
+            content="[本轮缺席：调用失败]",
             success=False,
             error="All retries failed",
             duration_seconds=0.0,

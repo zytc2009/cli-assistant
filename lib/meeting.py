@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import uuid
 from dataclasses import dataclass, field
@@ -10,7 +11,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 
-@dataclass
+@dataclass(frozen=True)
 class Round:
     round_num: int
     responses: Dict[str, str] = field(default_factory=dict)
@@ -171,7 +172,7 @@ def load_meeting(topic_id: str, base_dir: Path) -> Meeting:
 
 # ── Discussion data model (discuss mode) ─────────────────────────────────────
 
-@dataclass
+@dataclass(frozen=True)
 class DiscussionRound:
     round_num: int
     moderator_opening: str = ""         # 主持人本轮开场引导
@@ -355,6 +356,6 @@ def list_meetings(base_dir: Path) -> List[dict]:
                         "session_count": len(data.get("sessions", [])),
                         "mode": "meeting",
                     })
-            except Exception:
-                pass
+            except (json.JSONDecodeError, KeyError, OSError) as e:
+                logging.warning("Failed to read meeting metadata from %s: %s", meta_path, e)
     return result

@@ -97,14 +97,16 @@ def build_synthesis_prompt(
     all_user_feedbacks: List[str],
 ) -> str:
     """Build prompt for moderator synthesis phase (Phase 3)."""
-    # Build full discussion history
+    # Build full discussion history (truncate each response to 800 chars to control prompt size)
+    _TRUNCATE_LEN = 800
     lines = []
     for round_data in full_history:
         rnum = round_data["round"]
         phase = round_data.get("phase", "未知阶段")
         lines.append(f"\n## [{phase}] 第 {rnum} 轮\n")
         for agent_name, response in round_data["responses"].items():
-            lines.append(f"\n**{agent_name}：**\n{response}\n")
+            truncated = response[:_TRUNCATE_LEN] + "..." if len(response) > _TRUNCATE_LEN else response
+            lines.append(f"\n**{agent_name}：**\n{truncated}\n")
         lines.append("\n---\n")
 
     full_discussion_history = "\n".join(lines)
