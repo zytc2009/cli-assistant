@@ -119,11 +119,15 @@ def build_synthesis_prompt(
     else:
         feedbacks_text = "（无补充意见）"
 
+    # Generate a brief summary of the topic for the header
+    topic_summary = user_idea[:50] + "..." if len(user_idea) > 50 else user_idea
+
     return template_content.format(
         agent_name=agent.name,
         user_idea=user_idea,
         full_discussion_history=full_discussion_history,
         all_user_feedback=feedbacks_text,
+        topic_summary=topic_summary,
     )
 
 
