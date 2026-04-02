@@ -228,10 +228,10 @@ gemini:
 
 ### Kimi
 
-**非交互模式**：stdin 管道 + `--input-format text` + `--output-format text`
+**非交互模式**：stdin 管道 + `--input-format text` + `--output-format stream-json`
 
 ```bash
-cat {prompt_file} | kimi --print --input-format text --output-format text
+export PYTHONIOENCODING=utf-8 && cat {prompt_file} | kimi --print --input-format text --output-format stream-json
 ```
 
 **关键标志说明**：
@@ -240,9 +240,12 @@ cat {prompt_file} | kimi --print --input-format text --output-format text
 |------|------|
 | `--print` | 非交互模式（print mode） |
 | `--input-format text` | 从 stdin 读取 prompt 内容 |
-| `--output-format text` | 输出纯文本格式 |
+| `--output-format stream-json` | 输出 JSON 流格式 |
+| `PYTHONIOENCODING=utf-8` | 解决 Windows UTF-8 编码问题 |
 
-> **注意**：不使用 `-p` 参数，因为 `-p` 会直接使用参数值作为输入，忽略 stdin。
+> **注意**：
+> 1. 不使用 `-p` 参数，因为 `-p` 会直接使用参数值作为输入，忽略 stdin
+> 2. 使用 `stream-json` 格式时，程序会自动解析提取 `type=text` 的内容
 
 **agents.yaml 配置**：
 
@@ -251,8 +254,9 @@ kimi:
   name: "Kimi"
   cli: kimi
   model: default
-  command: 'cat {prompt_file} | kimi --print --input-format text --output-format text'
+  command: 'export PYTHONIOENCODING=utf-8 && cat {prompt_file} | kimi --print --input-format text --output-format stream-json'
   prompt_method: file
+  output_format: json    # 告知程序解析 JSON 输出
   max_tokens: 4000
   timeout: 120
   strengths: "产品视角、用户体验、中文场景、长上下文"
@@ -268,7 +272,7 @@ kimi:
 | Claude | `-p {file}` | stdout | 无需 | 需要 git-bash |
 | Codex | `exec -o {file}` | 输出文件 | `--full-auto` | 无 |
 | Gemini | stdin pipe + `-p " "` | stdout | `--yolo` | 无 |
-| Kimi | stdin pipe + `--input-format text` | stdout | `--print` | 无 |
+| Kimi | stdin pipe + `--input-format text` | JSON stream | `--print` | PYTHONIOENCODING |
 
 ---
 
