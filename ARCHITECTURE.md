@@ -578,13 +578,15 @@ invoke(kimi, ...)
 
 | 维度 | Claude | Codex | Gemini | Kimi |
 |------|--------|-------|--------|------|
-| 非交互标志 | `-p -` (stdin) | `-q -` (stdin) | stdin + `-p " "` | `--file {file}` |
+| 非交互标志 | `-p -` (stdin) | `-q -` (stdin) | stdin + `-p " "` | `--print -p -` |
 | 自动批准 | 不需要 | `--full-auto` | `--yolo` | `-y` |
 | 输出来源 | stdout | 临时输出文件 | stdout | stdout |
-| stdout 噪声 | 无 | 有（header + token stats + 重复） | 无 | 无 |
-| Windows 特殊处理 | 需要 git-bash | 无 | 无 | 注意 gbk 编码 |
+| stdout 噪声 | 无 | 有（header + token stats + 重复） | 无 | **有（详细执行日志）** |
+| Windows 特殊处理 | 需要 git-bash | 无 | 无 | **⚠️ stdin 输入问题** |
 | 模型选择 | `--model claude-xxx` | 账号决定（API key 可用 `-m`）| `-m gemini-xxx` | `-m moonshot-xxx` |
 | 在 git 外运行 | 无限制 | 需要 `--skip-git-repo-check` | 无限制 | 无限制 |
+
+**Kimi Windows 已知问题**：Kimi CLI 在 Windows 上存在 stdin 输入问题，`--print -p -` 模式无法正确接收 stdin 输入，始终显示输入为 `-`。建议暂时使用 Claude 和 Codex 进行多 AI 讨论，Kimi 支持将在后续版本修复。
 
 **Codex stdout 噪声示例（不用 `-o` 时）**：
 

@@ -227,6 +227,8 @@ kimi -p "$(cat {prompt_file})" -y
 | `-y` / `--yolo` / `--yes` | 自动批准所有操作 |
 | `-m TEXT` | 指定模型（默认使用配置文件中的模型） |
 
+> **⚠️ 已知问题（Windows）**：当前 Kimi CLI 在 Windows 上存在 stdin 输入问题，无法通过非交互模式正确接收 prompt。建议暂时使用 Claude 和 Codex 进行多 AI 讨论。Kimi 支持将在后续版本修复。
+
 **Windows 编码注意**：Kimi 在 Windows 终端直接运行时可能出现 gbk 编码错误（UI 字符集问题）。通过 `-p` 标志走非交互模式可以规避大部分此类问题。若仍有问题，可在环境变量中设置：
 
 ```
