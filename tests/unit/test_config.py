@@ -44,8 +44,38 @@ class TestAgentConfigValidate:
             strengths="test",
             cost_tier="medium",
         )
-        with pytest.raises(ValueError, match="must contain"):
+        with pytest.raises(ValueError, match="must contain|stdin mode"):
             cfg.validate("test-agent")
+
+    def test_stdin_mode_with_dash_p_accepted(self):
+        """Test that commands using stdin mode (-p -) are accepted."""
+        cfg = AgentConfig(
+            name="Claude",
+            cli="claude",
+            model="claude-sonnet-4-6",
+            command="claude -p - --output-format text",
+            prompt_method="file",
+            max_tokens=4000,
+            timeout=120,
+            strengths="test",
+            cost_tier="medium",
+        )
+        cfg.validate("claude")  # should not raise
+
+    def test_stdin_mode_with_dash_q_accepted(self):
+        """Test that commands using stdin mode (-q -) are accepted."""
+        cfg = AgentConfig(
+            name="Codex",
+            cli="codex",
+            model="o3",
+            command="codex -q - --approval-mode full-auto",
+            prompt_method="file",
+            max_tokens=4000,
+            timeout=120,
+            strengths="test",
+            cost_tier="medium",
+        )
+        cfg.validate("codex")  # should not raise
 
     def test_timeout_zero_raises(self):
         cfg = AgentConfig(

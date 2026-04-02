@@ -24,8 +24,13 @@ class AgentConfig:
     output_file: str = ""
 
     def validate(self, agent_id: str) -> None:
-        if "{prompt_file}" not in self.command and "{prompt_content}" not in self.command:
-            raise ValueError(f"Agent '{agent_id}' command must contain {{prompt_file}} or {{prompt_content}}")
+        # 支持两种 prompt 传递方式：
+        # 1. 文件模式：命令包含 {prompt_file} 或 {prompt_content}
+        # 2. stdin 模式：命令使用 "-" 作为输入（如 claude -p -, codex -q -）
+        is_file_mode = "{prompt_file}" in self.command or "{prompt_content}" in self.command
+        is_stdin_mode = " -p -" in self.command or " -q -" in self.command
+        if not is_file_mode and not is_stdin_mode:
+            raise ValueError(f"Agent '{agent_id}' command must contain {{prompt_file}} or use stdin mode (e.g., -p -, -q -)")
         if self.timeout <= 0:
             raise ValueError(f"Agent '{agent_id}' timeout must be > 0")
 
