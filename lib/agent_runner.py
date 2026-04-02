@@ -25,16 +25,22 @@ def _find_bash_win32() -> str:
     found = shutil.which("bash")
     if found:
         return found
-    # 3. Try common Git for Windows install locations
-    candidates = [
-        r"C:\tools\Git\usr\bin\bash.exe",
-        r"C:\Program Files\Git\usr\bin\bash.exe",
-        r"C:\Program Files (x86)\Git\usr\bin\bash.exe",
-    ]
-    for p in candidates:
-        if Path(p).exists():
-            return p
-    return "bash"
+    # 3. Not found - raise clear error
+    raise RuntimeError(
+        "\n" + "=" * 60 + "\n"
+        "ERROR: Cannot find bash.exe on Windows\n"
+        "=" * 60 + "\n\n"
+        "Claude CLI requires Git bash. Please ensure:\n\n"
+        "1. Git for Windows is installed:\n"
+        "   https://git-scm.com/download/win\n\n"
+        "2. Git is added to your system PATH:\n"
+        "   - Default location: C:\\Program Files\\Git\\bin\\bash.exe\n"
+        "   - Or: C:\\Program Files\\Git\\usr\\bin\\bash.exe\n\n"
+        "3. Or set environment variable before running:\n"
+        "   $env:CLAUDE_CODE_GIT_BASH_PATH = \"C:\\Program Files\\Git\\bin\\bash.exe\"\n\n"
+        "Current PATH does not contain bash.exe\n"
+        "=" * 60
+    )
 
 
 def _build_subprocess_args(cmd: str) -> dict:

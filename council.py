@@ -14,39 +14,10 @@ if sys.platform == "win32":
 # On Windows, set CLAUDE_CODE_GIT_BASH_PATH so claude CLI can find bash
 import os
 import shutil
-from pathlib import Path
 
 if sys.platform == "win32" and "CLAUDE_CODE_GIT_BASH_PATH" not in os.environ:
-    bash_path = None
-    # 1. Try shutil.which (works in cmd, may not work in PowerShell)
     bash_path = shutil.which("bash")
-    # 2. If not found, try common Git install locations (PowerShell fallback)
-    # 注意：Git for Windows 有两种路径结构
-    #   - usr\bin\bash.exe (MSYS2 版本)
-    #   - bin\bash.exe (MinGW 版本)
-    if not bash_path:
-        candidates = [
-            r"C:\tools\Git\bin\bash.exe",       # 你的安装路径
-            r"C:\tools\Git\usr\bin\bash.exe",
-            r"C:\Program Files\Git\bin\bash.exe",
-            r"C:\Program Files\Git\usr\bin\bash.exe",
-            r"C:\Program Files (x86)\Git\bin\bash.exe",
-            r"C:\Program Files (x86)\Git\usr\bin\bash.exe",
-        ]
-        for p in candidates:
-            if Path(p).exists():
-                bash_path = p
-                break
-    # 3. Set environment variable if found
     if bash_path:
-        # Convert to Windows-style absolute path
-        import subprocess as _sp
-        try:
-            result = _sp.run(["cygpath", "-w", bash_path], capture_output=True, text=True, timeout=3)
-            if result.returncode == 0:
-                bash_path = result.stdout.strip()
-        except Exception:
-            pass
         os.environ["CLAUDE_CODE_GIT_BASH_PATH"] = bash_path
 
 import click

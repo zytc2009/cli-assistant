@@ -94,13 +94,28 @@ kimi    1.28.0
 claude -p "{prompt_file}" --output-format text
 ```
 
-**注意事项**：
-- Windows 上需要 git-bash，安装后设置环境变量：
-  ```
-  CLAUDE_CODE_GIT_BASH_PATH=C:\Program Files\Git\bin\bash.exe
-  ```
-- `--output-format text` 确保输出纯文本，去掉 ANSI 格式符
-- 支持 `--model` 指定模型：`claude-opus-4-6` / `claude-sonnet-4-6`
+**Windows 注意事项**：
+
+1. **Git 必须添加到 PATH**：Claude CLI 依赖 git-bash，安装 [Git for Windows](https://git-scm.com/download/win) 时需选择 **"Git from the command line and also from 3rd-party software"**，或手动将 `C:\Program Files\Git\bin` 添加到系统 PATH。
+
+2. **验证配置**：
+   ```powershell
+   # 在 PowerShell 或 cmd 中运行
+   where bash
+   # 应输出类似: C:\Program Files\Git\bin\bash.exe
+   ```
+
+3. **如仍无法找到 bash**，可手动设置环境变量：
+   ```powershell
+   # PowerShell
+   $env:CLAUDE_CODE_GIT_BASH_PATH = "C:\Program Files\Git\bin\bash.exe"
+
+   # 或永久设置
+   [Environment]::SetEnvironmentVariable("CLAUDE_CODE_GIT_BASH_PATH", "C:\Program Files\Git\bin\bash.exe", "User")
+   ```
+
+4. `--output-format text` 确保输出纯文本，去掉 ANSI 格式符
+5. 支持 `--model` 指定模型：`claude-opus-4-6` / `claude-sonnet-4-6`
 
 **agents.yaml 配置**：
 
