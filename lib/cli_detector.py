@@ -43,7 +43,7 @@ class CLIDetector:
         },
         "kimi": {
             "name": "Moonshot Kimi",
-            "command": 'kimi-for-coding -p {prompt_file}',
+            "command": 'kimi --print -p -',
             "check_cmd": "kimi --version",
             "version_pattern": r"(\d+\.\d+\.\d+)",
             "strengths": "产品视角、用户体验、中文场景、长上下文",

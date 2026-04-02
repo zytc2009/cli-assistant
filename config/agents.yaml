@@ -42,8 +42,8 @@ agents:
   kimi:
     name: Kimi
     cli: kimi
-    model: kimi-for-coding
-    command: kimi-for-coding -p {prompt_file}
+    model: default
+    command: kimi --print -p -
     prompt_method: file
     max_tokens: 4000
     timeout: 120
