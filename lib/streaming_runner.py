@@ -154,6 +154,20 @@ class StreamingRunner:
         try:
             cmd = agent.command
 
+            # Handle output file (e.g., codex -o flag)
+            output_file = None
+            if "{output_file}" in cmd:
+                with tempfile.NamedTemporaryFile(
+                    mode="w",
+                    suffix=".md",
+                    delete=False,
+                    encoding="utf-8",
+                ) as f:
+                    output_file = f.name
+                if sys.platform == "win32":
+                    output_file = Path(output_file).as_posix()
+                cmd = cmd.replace("{output_file}", output_file)
+
             # Handle prompt input: either via file placeholder or stdin
             stdin_pipe = None
             if "{prompt_file}" in cmd:
@@ -297,6 +311,16 @@ class StreamingRunner:
 
             full_output = "\n".join(output_lines)
 
+            # If output_file was used, read from file (overrides stdout)
+            if output_file and Path(output_file).exists():
+                try:
+                    file_content = Path(output_file).read_text(encoding="utf-8")
+                    if file_content.strip():
+                        full_output = file_content
+                        console.print(f"[dim]从文件读取 {len(file_content)} 字符[/dim]")
+                except Exception as e:
+                    console.print(f"[dim]读取输出文件失败: {e}[/dim]")
+
             # Handle JSON stream format (e.g., kimi --output-format stream-json)
             if agent.output_format == "json" or agent.output_format == "stream-json":
                 full_output = self._extract_text_from_json_stream(full_output)
@@ -348,6 +372,11 @@ class StreamingRunner:
             if prompt_file:
                 try:
                     os.unlink(prompt_file)
+                except OSError:
+                    pass
+            if output_file:
+                try:
+                    os.unlink(output_file)
                 except OSError:
                     pass
 
