@@ -63,8 +63,36 @@ class StreamingRunner:
     def __init__(self, agents: dict[str, AgentConfig]):
         self.agents = agents
 
+    def _extract_text_from_json_line(self, line: str) -> str:
+        """Extract text content from a single JSON line (e.g., kimi stream-json).
+
+        Format: {"role":"assistant","content":[{"type":"think",...},{"type":"text","text":"..."}]}
+        Returns concatenated text from all type=text entries in this line.
+        """
+        import json
+
+        line = line.strip()
+        if not line:
+            return ""
+        try:
+            data = json.loads(line)
+            if isinstance(data, dict) and 'content' in data:
+                content = data['content']
+                if isinstance(content, list):
+                    text_parts = []
+                    for item in content:
+                        if isinstance(item, dict) and item.get('type') == 'text':
+                            text = item.get('text', '')
+                            if text:
+                                text_parts.append(text)
+                    return '\n'.join(text_parts)
+        except json.JSONDecodeError:
+            # Not a JSON line, return as-is
+            pass
+        return line
+
     def _extract_text_from_json_stream(self, output: str) -> str:
-        """Extract text content from JSON stream format (e.g., kimi stream-json).
+        """Extract text content from full JSON stream output.
 
         Format: {"role":"assistant","content":[{"type":"think",...},{"type":"text","text":"..."}]}
         Returns concatenated text from all type=text entries.
@@ -168,6 +196,7 @@ class StreamingRunner:
                 process.stdin.close()
 
             # Stream stdout in real-time
+            is_json_stream = agent.output_format == "json" or agent.output_format == "stream-json"
             if process.stdout:
                 for line in iter(process.stdout.readline, ''):
                     if not line:
@@ -175,8 +204,14 @@ class StreamingRunner:
                     line = line.rstrip('\n\r')
                     output_lines.append(line)
 
-                    # Print with prefix
-                    console.print(f"> {line}")
+                    # For JSON stream, extract and display text content immediately
+                    display_line = line
+                    if is_json_stream:
+                        display_line = self._extract_text_from_json_line(line)
+
+                    # Print with prefix (only if there's content to display)
+                    if display_line:
+                        console.print(f"> {display_line}")
 
                     # Call callback if provided
                     if on_output:
