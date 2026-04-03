@@ -62,9 +62,14 @@ def _make_discussion_orchestrator(config: Config, runner: AgentRunner) -> Discus
     return DiscussionOrchestrator(config=config, base_dir=BASE_DIR, runner=runner, summarizer_agent=summarizer)
 
 
+def _split_agents(value: str) -> list[str]:
+    """Split agent string by English or Chinese comma."""
+    return [v.strip() for v in value.replace("，", ",").split(",") if v.strip()]
+
+
 def _parse_agents(agents_str: str, config: Config, strategy: str, session_type: str) -> list[str]:
     if agents_str:
-        agent_list = [a.strip() for a in agents_str.split(",")]
+        agent_list = _split_agents(agents_str)
         for a in agent_list:
             config.get_agent(a)  # validate
         return agent_list
@@ -149,7 +154,7 @@ def _select_clis(available_clis: list) -> list[str]:
             return [cli.cli_id for cli in installed]
 
         try:
-            indices = [int(x.strip()) for x in choice.split(",")]
+            indices = [int(x.strip()) for x in choice.replace("，", ",").split(",")]
             selected = []
             for idx in indices:
                 if 1 <= idx <= len(installed):
@@ -967,7 +972,7 @@ def discuss(idea, agents, rounds, moderator):
 
     # Parse agents
     if agents:
-        agent_list = [a.strip() for a in agents.split(",")]
+        agent_list = _split_agents(agents)
         for a in agent_list:
             config.get_agent(a)  # validate
     else:
