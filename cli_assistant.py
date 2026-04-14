@@ -91,6 +91,55 @@ def _pick_summarizer(config: Config) -> str:
     return next(iter(config.agents))
 
 
+# ── Harness Task Export ───────────────────────────────────────────────────────
+
+def _export_as_harness_task(final_output: str, topic_id: str) -> None:
+    """Interactive wizard: append Constraints + Status to produce a Harness-ready task.md."""
+    console.print("\n[bold cyan]── Harness 任务导出向导 ──[/bold cyan]")
+    console.print("[dim]所有字段均可选，直接回车跳过[/dim]\n")
+
+    constraints: list[str] = []
+
+    lang = console.input("language (如 Python / C++, 可跳过): ").strip()
+    if lang:
+        constraints.append(f"- language: {lang}")
+
+    platform = console.input("platform (如 Windows / Linux, 可跳过): ").strip()
+    if platform:
+        constraints.append(f"- platform: {platform}")
+
+    harness = console.input("harness (如 harness-cpp, 可跳过): ").strip()
+    if harness:
+        constraints.append(f"- harness: {harness}")
+
+    exec_mode = console.input("execution_mode (provider / cli, 可跳过): ").strip()
+    if exec_mode:
+        constraints.append(f"- execution_mode: {exec_mode}")
+        if exec_mode == "cli":
+            cli_cmd = console.input("cli_command (如 codex exec ..., 可跳过): ").strip()
+            if cli_cmd:
+                constraints.append(f"- cli_command: {cli_cmd}")
+
+    console.print("\n[dim]输出路径：workspace_dir 用于 git 仓库，output_dir 仅复制文件（二选一）[/dim]")
+    workspace_dir = console.input("workspace_dir (git 仓库路径, 可跳过): ").strip()
+    if workspace_dir:
+        constraints.append(f"- workspace_dir: {workspace_dir}")
+    else:
+        output_dir = console.input(f"output_dir (留空则自动设为 output/{topic_id}): ").strip()
+        if not output_dir:
+            output_dir = f"output/{topic_id}"
+        constraints.append(f"- output_dir: {output_dir}")
+
+    constraints_block = "\n## Constraints\n" + "\n".join(constraints)
+    task_content = final_output.rstrip() + "\n" + constraints_block + "\n\n## Status\nready\n"
+
+    task_path = BASE_DIR / "meetings" / topic_id / "task.md"
+    task_path.write_text(task_content, encoding="utf-8")
+
+    console.print(f"\n[green]✓ task.md 已生成：[/green]")
+    console.print(f"  {task_path.absolute()}\n")
+
+
 # ── Interactive Wizard Helper Functions ───────────────────────────────────────
 
 def _input_idea() -> str:
@@ -505,17 +554,26 @@ def _run_interactive_wizard():
     output_filename = "requirement.md" if flow == "requirement" else "final_output.md"
     console.print("[bold]结果已保存至：[/bold]")
     console.print(f"  meetings/{topic_id}/{output_filename}\n")
-    if flow == "requirement":
-        console.print(
-            "[dim]提示：将该文件交给 Harness_engineering 的 auto-dev skill，"
-            "由它补全 Constraints / workspace_dir 等运行时字段并入队。[/dim]\n"
-        )
 
     # Preview
     if final_output:
         console.print(Markdown(final_output[:2000] + "..." if len(final_output) > 2000 else final_output))
     else:
         console.print("[yellow]警告: 最终输出为空[/yellow]")
+
+    # Export choice (requirement flow only)
+    if flow == "requirement":
+        console.print("\n[bold cyan][导出格式][/bold cyan]")
+        console.print("  [1] 普通需求文档（requirement.md，已保存）")
+        console.print("  [2] Harness 任务文档（task.md，可直接 --add-file 入队）")
+        while True:
+            choice = console.input("\n请选择 [1/2]: ").strip()
+            if choice == "1":
+                break
+            if choice == "2":
+                _export_as_harness_task(final_output, topic_id)
+                break
+            console.print("[red]请输入 1 或 2[/red]")
 
 
 # ── CLI Group ─────────────────────────────────────────────────────────────────
