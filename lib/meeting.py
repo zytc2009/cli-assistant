@@ -197,6 +197,7 @@ class Discussion:
     final_output: str = ""
     user_feedbacks: List[str] = field(default_factory=list)
     phases: List[DiscussionPhase] = field(default_factory=list)
+    flow: str = "discussion"            # discussion / requirement
 
 
 # ── Discussion persistence ────────────────────────────────────────────────────
@@ -212,6 +213,7 @@ def save_discussion(discussion: Discussion, base_dir: Path) -> None:
     # Save metadata
     meta = {
         "mode": "discuss",
+        "flow": discussion.flow,
         "topic_id": discussion.topic_id,
         "user_idea": discussion.user_idea,
         "created_at": discussion.created_at,
@@ -274,9 +276,10 @@ def save_discussion(discussion: Discussion, base_dir: Path) -> None:
                     discussion.final_output, encoding="utf-8"
                 )
 
-    # Top-level final_output.md
+    # Top-level output file (filename depends on flow)
     if discussion.final_output:
-        (topic_dir / "final_output.md").write_text(discussion.final_output, encoding="utf-8")
+        output_filename = "requirement.md" if discussion.flow == "requirement" else "final_output.md"
+        (topic_dir / output_filename).write_text(discussion.final_output, encoding="utf-8")
 
 
 def load_discussion(topic_id: str, base_dir: Path) -> Discussion:
@@ -306,9 +309,12 @@ def load_discussion(topic_id: str, base_dir: Path) -> Discussion:
         ))
 
     final_output = ""
-    final_path = topic_dir / "final_output.md"
-    if final_path.exists():
-        final_output = final_path.read_text(encoding="utf-8")
+    req_path = topic_dir / "requirement.md"
+    legacy_path = topic_dir / "final_output.md"
+    if req_path.exists():
+        final_output = req_path.read_text(encoding="utf-8")
+    elif legacy_path.exists():
+        final_output = legacy_path.read_text(encoding="utf-8")
 
     return Discussion(
         topic_id=data["topic_id"],
@@ -320,6 +326,7 @@ def load_discussion(topic_id: str, base_dir: Path) -> Discussion:
         final_output=final_output,
         user_feedbacks=data.get("user_feedbacks", []),
         phases=phases,
+        flow=data.get("flow", "discussion"),
     )
 
 

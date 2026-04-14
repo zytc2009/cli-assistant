@@ -210,6 +210,42 @@ def _select_moderator(selected_agents: list[str], config: Config) -> str:
             console.print("[red]请输入数字编号[/red]")
 
 
+def _select_flow() -> str:
+    """Let user pick discussion flow: free discussion or requirement gathering."""
+    console.print("\n[bold cyan][讨论模式][/bold cyan] 请选择本次讨论的目标：")
+    console.print("  [1] 自由讨论 - 多 AI 自由探讨观点，输出会议纪要")
+    console.print("  [2] 需求讨论 - 多 AI 协作澄清需求，输出 requirement.md（喂给 auto-dev）")
+
+    while True:
+        choice = console.input("\n选择 [1/2，默认 1]: ").strip()
+        if choice == "" or choice == "1":
+            console.print("[green]✓ 已选择：自由讨论[/green]\n")
+            return "discussion"
+        if choice == "2":
+            console.print("[green]✓ 已选择：需求讨论[/green]\n")
+            return "requirement"
+        console.print("[red]请输入 1 或 2[/red]")
+
+
+def _input_multiline(label: str, hint: str) -> str:
+    """Collect multi-line user input ending with an empty line."""
+    console.print(f"\n[bold yellow]{label}[/bold yellow]")
+    if hint:
+        console.print(f"[dim]{hint}[/dim]\n")
+    lines: list[str] = []
+    while True:
+        try:
+            line = console.input("> ")
+        except (KeyboardInterrupt, EOFError):
+            break
+        if line.strip() == "":
+            if lines:
+                break
+            continue
+        lines.append(line)
+    return "\n".join(lines)
+
+
 def _confirm_config() -> dict:
     """Let user confirm discussion configuration.
 
@@ -293,6 +329,9 @@ def _run_interactive_wizard():
     if not user_idea:
         console.print("[yellow]未输入内容，退出[/yellow]")
         return
+
+    # Step 1.5: Pick discussion flow
+    flow = _select_flow()
 
     # Step 2: Detect CLIs
     console.print("\n[bold cyan][第2步][/bold cyan] 检测本地可用的 AI CLI...\n")
@@ -390,6 +429,7 @@ def _run_interactive_wizard():
         created_at=datetime.now().isoformat(),
         agents=valid_agents,
         moderator=moderator_id,
+        flow=flow,
     )
 
     # Show start header
@@ -412,12 +452,21 @@ def _run_interactive_wizard():
         traceback.print_exc()
         return
 
-    # Optional user feedback before discussion
-    console.print("[dim]（可选）补充意见或约束（直接回车跳过）:[/dim]")
-    feedback = console.input("> ").strip()
-    if feedback:
-        discussion.user_feedbacks.append(f"讨论前: {feedback}")
-        console.print()
+    # User feedback before discussion — prompt depends on flow
+    if flow == "requirement":
+        feedback = _input_multiline(
+            label="请回答以上各 AI 提出的待澄清问题",
+            hint="可一次性回答多个问题，多行输入，空行结束。直接空行跳过表示暂不补充。",
+        ).strip()
+        if feedback:
+            discussion.user_feedbacks.append(f"需求澄清回答: {feedback}")
+            console.print()
+    else:
+        console.print("[dim]（可选）补充意见或约束（直接回车跳过）:[/dim]")
+        feedback = console.input("> ").strip()
+        if feedback:
+            discussion.user_feedbacks.append(f"讨论前: {feedback}")
+            console.print()
 
     # Phase 2: Discussion with streaming
     try:
@@ -453,8 +502,14 @@ def _run_interactive_wizard():
     console.print("[bold green]══════════════════════════════════════════════════════[/bold green]\n")
 
     # Show result
+    output_filename = "requirement.md" if flow == "requirement" else "final_output.md"
     console.print("[bold]结果已保存至：[/bold]")
-    console.print(f"  meetings/{topic_id}/final_output.md\n")
+    console.print(f"  meetings/{topic_id}/{output_filename}\n")
+    if flow == "requirement":
+        console.print(
+            "[dim]提示：将该文件交给 Harness_engineering 的 auto-dev skill，"
+            "由它补全 Constraints / workspace_dir 等运行时字段并入队。[/dim]\n"
+        )
 
     # Preview
     if final_output:

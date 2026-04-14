@@ -36,11 +36,27 @@ class DiscussionOrchestrator:
     - Phase 3: Moderator synthesis (final output)
     """
 
+    # Map default discussion-mode prompt names to requirement-mode variants.
+    _REQUIREMENT_PROMPT_MAP = {
+        "independent_opinion.md": "requirement_independent.md",
+        "moderator_opening.md": "requirement_moderator_opening.md",
+        "discussion_response.md": "requirement_discussion_response.md",
+        "moderator_synthesis.md": "requirement_synthesis.md",
+    }
+
     def __init__(self, config: Config, base_dir, runner: AgentRunner, summarizer_agent: str = "claude-sonnet"):
         self.config = config
         self.base_dir = base_dir
         self.runner = runner
         self.summarizer_agent = summarizer_agent
+
+    def _prompt_for(self, discussion: Discussion, default_name: str) -> str:
+        """Load the prompt template appropriate for the discussion's flow."""
+        if discussion.flow == "requirement":
+            name = self._REQUIREMENT_PROMPT_MAP.get(default_name, default_name)
+        else:
+            name = default_name
+        return self.config.prompt(name)
 
     # ── Phase 1 ──────────────────────────────────────────────────────────────
 
@@ -54,10 +70,14 @@ class DiscussionOrchestrator:
         When streaming_runner is provided, agents are invoked sequentially with
         real-time output.  Without it, agents run in parallel via AgentRunner.
         """
-        console.print("\n[bold cyan]Phase 1: 收集各方观点[/bold cyan]")
-        console.print("[dim]所有 AI 独立发表观点...[/dim]\n")
+        if discussion.flow == "requirement":
+            console.print("\n[bold cyan]Phase 1: 各 AI 独立审视需求[/bold cyan]")
+            console.print("[dim]所有 AI 列出已清楚字段、待澄清问题...[/dim]\n")
+        else:
+            console.print("\n[bold cyan]Phase 1: 收集各方观点[/bold cyan]")
+            console.print("[dim]所有 AI 独立发表观点...[/dim]\n")
 
-        template = self.config.prompt("independent_opinion.md")
+        template = self._prompt_for(discussion, "independent_opinion.md")
 
         phase = DiscussionPhase(
             phase_type="independent",
@@ -365,7 +385,7 @@ class DiscussionOrchestrator:
         streaming_runner=None,
     ) -> str:
         """Run moderator opening for a round."""
-        template = self.config.prompt("moderator_opening.md")
+        template = self._prompt_for(discussion, "moderator_opening.md")
         moderator_cfg = self.config.get_agent(discussion.moderator)
 
         user_feedback = discussion.user_feedbacks[-1] if discussion.user_feedbacks else ""
@@ -405,7 +425,7 @@ class DiscussionOrchestrator:
         streaming_runner=None,
     ) -> Dict[str, str]:
         """Run one round of discussion (non-moderator agents respond)."""
-        template = self.config.prompt("discussion_response.md")
+        template = self._prompt_for(discussion, "discussion_response.md")
         moderator_cfg = self.config.get_agent(discussion.moderator)
 
         responses: Dict[str, str] = {}
@@ -511,7 +531,7 @@ class DiscussionOrchestrator:
             raise ValueError("Moderator must be selected")
 
         moderator_cfg = self.config.get_agent(discussion.moderator)
-        template = self.config.prompt("moderator_synthesis.md")
+        template = self._prompt_for(discussion, "moderator_synthesis.md")
 
         # Build full history (bounds-checked)
         full_history: List[Dict] = []
