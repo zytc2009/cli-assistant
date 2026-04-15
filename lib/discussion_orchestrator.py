@@ -23,6 +23,7 @@ from .prompt_builder import (
     build_discussion_prompt,
     build_independent_prompt,
     build_moderator_opening_prompt,
+    build_requirement_round_prompt,
     build_synthesis_prompt,
 )
 
@@ -370,10 +371,14 @@ class DiscussionOrchestrator:
         max_rounds: int = 3,
         streaming_runner=None,
     ) -> DiscussionPhase:
-        """Phase 2: Moderator-led multi-round discussion.
+        """Phase 2: discussion loop.
 
-        When streaming_runner is provided, agent invocations use streaming output.
+        Requirement flow: no moderator, iterative clarification with user, no round limit.
+        Free discussion flow: moderator-led, up to max_rounds.
         """
+        if discussion.flow == "requirement":
+            return self._run_requirement_discussion_phase(discussion, streaming_runner)
+
         if not discussion.moderator:
             raise ValueError("Moderator must be selected before discussion phase")
 
@@ -582,6 +587,186 @@ class DiscussionOrchestrator:
             discussion, max_rounds=max_rounds, streaming_runner=streaming_runner
         )
 
+    # ── Requirement Phase 2: no-moderator iterative clarification ────────────
+
+    def _run_requirement_discussion_phase(
+        self,
+        discussion: Discussion,
+        streaming_runner=None,
+    ) -> DiscussionPhase:
+        """Phase 2 for requirement flow.
+
+        All agents participate equally (no moderator).  The loop continues until
+        consensus is detected or the user ends it.  After every round the user
+        is shown remaining unclear questions and given a chance to add context
+        (they can skip — their blind spots are fine, agents will assume).
+        """
+        console.print("\n[bold cyan]Phase 2: 需求迭代澄清[/bold cyan]")
+        console.print("[dim]各 AI 平等参与，持续推进直到需求收敛或你选择结束[/dim]\n")
+
+        phase = DiscussionPhase(phase_type="discussion", phase_index=2)
+        discussion.phases.append(phase)
+
+        # Seed history from Phase 1
+        history: List[Dict] = []
+        if discussion.phases and discussion.phases[0].rounds:
+            history.append({
+                "round": 1,
+                "phase": "独立发言",
+                "responses": {
+                    self.config.get_agent(aid).name: content
+                    for aid, content in discussion.phases[0].rounds[0].responses.items()
+                },
+            })
+
+        round_num = 0
+        while True:
+            round_num += 1
+            console.print(f"\n[bold cyan]── 第 {round_num} 轮澄清 ──[/bold cyan]\n")
+
+            round_responses = self._run_requirement_round(
+                discussion=discussion,
+                history=history,
+                round_num=round_num,
+                streaming_runner=streaming_runner,
+            )
+
+            discussion_round = DiscussionRound(round_num=round_num, responses=round_responses)
+            phase.rounds.append(discussion_round)
+            save_discussion(discussion, self.base_dir)
+
+            history.append({
+                "round": round_num + 1,
+                "phase": "澄清讨论",
+                "responses": {
+                    self.config.get_agent(aid).name: content
+                    for aid, content in round_responses.items()
+                },
+            })
+
+            try:
+                history = compress_history(
+                    rounds=history,
+                    runner=self.runner,
+                    summarizer_agent=self.summarizer_agent,
+                    summarizer_prompt_template=self.config.prompt("summarizer.md"),
+                    max_chars=4000,
+                    keep_recent=1,
+                )
+            except Exception as e:
+                console.print(f"[dim]历史压缩失败（继续）: {e}[/dim]")
+
+            # Show converged field status
+            status = self._show_requirement_status(
+                discussion, round_responses=round_responses
+            )
+            all_converged = len(status) == len(self._REQUIREMENT_FIELDS)
+
+            # Consensus check
+            consensus = self._check_consensus(round_responses)
+            if consensus.consensus_reached or all_converged:
+                console.print(
+                    f"\n[green]✓ 需求已收敛，进入 Phase 3[/green]\n"
+                )
+                break
+
+            # Show remaining unclear questions from agents' responses
+            unclear = self._extract_unclear_points(round_responses)
+            if unclear:
+                console.print("\n[yellow]AI 仍待向你澄清的问题：[/yellow]")
+                for pt in unclear:
+                    console.print(f"  • {pt}")
+
+            # Optional user clarification
+            console.print(
+                "\n[dim]可补充回答上面的问题（多行，空行结束）；"
+                "直接回车跳过；输入 d 结束并生成文档：[/dim]"
+            )
+            lines: List[str] = []
+            while True:
+                try:
+                    line = console.input("> ").strip()
+                except (KeyboardInterrupt, EOFError):
+                    break
+                if line.lower() == "d":
+                    console.print("\n[dim]结束讨论，进入 Phase 3...[/dim]\n")
+                    return phase
+                if line == "" and lines:
+                    break
+                if line == "":
+                    break
+                lines.append(line)
+
+            if lines:
+                feedback = "\n".join(lines)
+                discussion.user_feedbacks.append(f"第{round_num}轮补充: {feedback}")
+                console.print("[dim]已记录，继续下一轮...[/dim]\n")
+            else:
+                console.print("[dim]未补充，AI 将基于合理假设继续推进...[/dim]\n")
+
+        return phase
+
+    def _run_requirement_round(
+        self,
+        discussion: Discussion,
+        history: List[Dict],
+        round_num: int,
+        streaming_runner=None,
+    ) -> Dict[str, str]:
+        """All agents respond equally in one requirement discussion round."""
+        template = self.config.prompt("requirement_discussion_response.md")
+        responses: Dict[str, str] = {}
+
+        for agent_id in discussion.agents:
+            agent_cfg = self.config.get_agent(agent_id)
+            prompt = build_requirement_round_prompt(
+                template_content=template,
+                agent=agent_cfg,
+                user_idea=discussion.user_idea,
+                history=history,
+                user_feedbacks=discussion.user_feedbacks,
+                round_num=round_num,
+            )
+
+            if streaming_runner is not None:
+                response = streaming_runner.invoke_with_retry_streaming(
+                    agent_name=agent_id,
+                    prompt_content=prompt,
+                    show_header=True,
+                )
+                responses[agent_id] = response.content if response.success else f"[调用失败: {response.error}]"
+            else:
+                with console.status(f"[cyan]{agent_cfg.name} 发言中...[/cyan]"):
+                    response = self.runner.invoke_with_retry(agent_id, prompt)
+                if response.success:
+                    console.print(f"  [green]✓[/green] {agent_cfg.name} ({response.duration_seconds:.1f}s)")
+                    responses[agent_id] = response.content
+                else:
+                    console.print(f"  [red]✗[/red] {agent_cfg.name} 失败")
+                    responses[agent_id] = f"[调用失败: {response.error}]"
+
+        return responses
+
+    def _extract_unclear_points(self, round_responses: Dict[str, str]) -> List[str]:
+        """Parse '仍待澄清的问题' sections from agent responses, dedup."""
+        points: List[str] = []
+        for content in round_responses.values():
+            match = re.search(
+                r"###?\s*2[\.。]?\s*仍待澄清的问题\s*\n(.*?)(?:\n###?|\Z)",
+                content,
+                re.DOTALL,
+            )
+            if not match:
+                continue
+            section = match.group(1).strip()
+            if not section or section == "无":
+                continue
+            for line in section.splitlines():
+                line = line.strip().lstrip("- ").strip()
+                if line and line != "无" and line not in points:
+                    points.append(line)
+        return points
+
     def _run_moderator_opening(
         self,
         discussion: Discussion,
@@ -741,10 +926,15 @@ class DiscussionOrchestrator:
         else:
             console.print("\n[bold cyan]Phase 3: 生成结果文档[/bold cyan]\n")
 
-        if not discussion.moderator:
-            raise ValueError("Moderator must be selected")
+        # Requirement flow: use cheapest summarizer; free discussion: use moderator
+        if discussion.flow == "requirement":
+            synthesizer_id = self.summarizer_agent
+        else:
+            if not discussion.moderator:
+                raise ValueError("Moderator must be selected")
+            synthesizer_id = discussion.moderator
 
-        moderator_cfg = self.config.get_agent(discussion.moderator)
+        synthesizer_cfg = self.config.get_agent(synthesizer_id)
         template = self._prompt_for(discussion, "moderator_synthesis.md")
 
         # Build full history (bounds-checked)
@@ -773,7 +963,7 @@ class DiscussionOrchestrator:
                     for aid, content in r.responses.items()
                 }
                 if r.moderator_opening:
-                    round_responses[f"{moderator_cfg.name}(主持人)"] = r.moderator_opening
+                    round_responses[f"{synthesizer_cfg.name}(主持人)"] = r.moderator_opening
                 full_history.append({
                     "round": len(full_history) + 1,
                     "phase": "讨论",
@@ -782,7 +972,7 @@ class DiscussionOrchestrator:
 
         prompt = build_synthesis_prompt(
             template_content=template,
-            agent=moderator_cfg,
+            agent=synthesizer_cfg,
             user_idea=discussion.user_idea,
             full_history=full_history,
             all_user_feedbacks=discussion.user_feedbacks,
@@ -790,13 +980,13 @@ class DiscussionOrchestrator:
 
         if streaming_runner is not None:
             response = streaming_runner.invoke_with_retry_streaming(
-                agent_name=discussion.moderator,
+                agent_name=synthesizer_id,
                 prompt_content=prompt,
                 show_header=True,
             )
         else:
-            with console.status(f"[yellow]{moderator_cfg.name} 正在综合各方观点...[/yellow]"):
-                response = self.runner.invoke_with_retry(discussion.moderator, prompt)
+            with console.status(f"[yellow]{synthesizer_cfg.name} 正在综合各方观点...[/yellow]"):
+                response = self.runner.invoke_with_retry(synthesizer_id, prompt)
 
         if not response.success:
             console.print(f"[red]✗ 生成失败: {response.error}[/red]")
