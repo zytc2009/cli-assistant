@@ -259,6 +259,20 @@ def _select_moderator(selected_agents: list[str], config: Config) -> str:
             console.print("[red]请输入数字编号[/red]")
 
 
+def _resolve_moderator(selected_agents: list[str], config: Config, flow: str) -> str:
+    """Resolve the moderator for the selected flow.
+
+    Free discussion keeps the moderator mechanism internally but skips the
+    interactive selection step and does not surface moderator configuration in
+    the wizard. Requirement discussions still require an explicit moderator
+    choice from the user.
+    """
+    if flow == "discussion":
+        return selected_agents[0]
+
+    return _select_moderator(selected_agents, config)
+
+
 def _select_flow() -> str:
     """Let user pick discussion flow: free discussion or requirement gathering."""
     console.print("\n[bold cyan][讨论模式][/bold cyan] 请选择本次讨论的目标：")
@@ -295,13 +309,14 @@ def _input_multiline(label: str, hint: str) -> str:
     return "\n".join(lines)
 
 
-def _confirm_config() -> dict:
+def _confirm_config(flow: str) -> dict:
     """Let user confirm discussion configuration.
 
     Returns:
         Dict with configuration options
     """
-    console.print(f"\n[bold cyan][第5步][/bold cyan] 讨论配置：")
+    step_num = 5 if flow == "requirement" else 4
+    console.print(f"\n[bold cyan][第{step_num}步][/bold cyan] 讨论配置：")
 
     max_rounds_str = console.input("  最大轮次 [3]: ").strip()
     max_rounds = int(max_rounds_str) if max_rounds_str.isdigit() else 3
@@ -464,11 +479,11 @@ def _run_interactive_wizard():
         console.print("[red]错误：没有有效的 AI 可以参与讨论[/red]")
         return
 
-    # Step 4: Select moderator
-    moderator_id = _select_moderator(valid_agents, config)
+    # Step 4: Resolve moderator internally for free discussion, interactively for requirement flow
+    moderator_id = _resolve_moderator(valid_agents, config, flow)
 
-    # Step 5: Confirm config
-    disc_config = _confirm_config()
+    # Step 5 for requirement flow, Step 4 for free discussion
+    disc_config = _confirm_config(flow)
 
     # Create discussion
     topic_id = create_topic_id(user_idea[:50])
