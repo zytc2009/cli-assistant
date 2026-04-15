@@ -1,4 +1,4 @@
-# 需求讨论 - 主持人开场（第 {round_num} / {max_rounds} 轮）
+# 需求讨论 - 主持人开场（第 {round_num} 轮）
 
 你是本次需求讨论的主持人 {agent_name}。
 

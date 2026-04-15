@@ -301,9 +301,7 @@ def _input_multiline(label: str, hint: str) -> str:
         except (KeyboardInterrupt, EOFError):
             break
         if line.strip() == "":
-            if lines:
-                break
-            continue
+            break
         lines.append(line)
     return "\n".join(lines)
 
@@ -499,7 +497,8 @@ def _run_interactive_wizard():
 
     # Show start header
     console.print("\n[bold green]══════════════════════════════════════════════════════[/bold green]")
-    console.print("[bold green]  讨论开始[/bold green]")
+    start_title = "需求讨论开始" if flow == "requirement" else "讨论开始"
+    console.print(f"[bold green]  {start_title}[/bold green]")
     console.print("[bold green]══════════════════════════════════════════════════════[/bold green]\n")
 
     # Initialize streaming runner
@@ -563,12 +562,14 @@ def _run_interactive_wizard():
 
     # Show completion
     console.print("[bold green]══════════════════════════════════════════════════════[/bold green]")
-    console.print("[bold green]  讨论完成[/bold green]")
+    done_title = "需求讨论完成" if flow == "requirement" else "讨论完成"
+    console.print(f"[bold green]  {done_title}[/bold green]")
     console.print("[bold green]══════════════════════════════════════════════════════[/bold green]\n")
 
     # Show result
     output_filename = "requirement.md" if flow == "requirement" else "final_output.md"
-    console.print("[bold]结果已保存至：[/bold]")
+    result_label = "需求文档已保存至：" if flow == "requirement" else "结果已保存至："
+    console.print(f"[bold]{result_label}[/bold]")
     console.print(f"  meetings/{topic_id}/{output_filename}\n")
 
     # Preview

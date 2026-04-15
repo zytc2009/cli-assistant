@@ -43,6 +43,7 @@ class DiscussionOrchestrator:
         "discussion_response.md": "requirement_discussion_response.md",
         "moderator_synthesis.md": "requirement_synthesis.md",
     }
+    _REQUIREMENT_SAFETY_MAX_ROUNDS = 12
 
     def __init__(self, config: Config, base_dir, runner: AgentRunner, summarizer_agent: str = "claude-sonnet"):
         self.config = config
@@ -58,6 +59,15 @@ class DiscussionOrchestrator:
             name = default_name
         return self.config.prompt(name)
 
+    def _discussion_participants(self, discussion: Discussion) -> List[str]:
+        """Return agents who should respond in Phase 2 for the current flow."""
+        other_agents = [aid for aid in discussion.agents if aid != discussion.moderator]
+        if other_agents:
+            return other_agents
+        if discussion.flow == "requirement" and discussion.moderator:
+            return [discussion.moderator]
+        return []
+
     # ── Phase 1 ──────────────────────────────────────────────────────────────
 
     def run_independent_phase(
@@ -71,8 +81,8 @@ class DiscussionOrchestrator:
         real-time output.  Without it, agents run in parallel via AgentRunner.
         """
         if discussion.flow == "requirement":
-            console.print("\n[bold cyan]Phase 1: 各 AI 独立审视需求[/bold cyan]")
-            console.print("[dim]所有 AI 列出已清楚字段、待澄清问题...[/dim]\n")
+            console.print("\n[bold cyan]Phase 1: 梳理需求焦点[/bold cyan]")
+            console.print("[dim]各 AI 先列出已知信息、缺口和待澄清问题...[/dim]\n")
         else:
             console.print("\n[bold cyan]Phase 1: 收集各方观点[/bold cyan]")
             console.print("[dim]所有 AI 独立发表观点...[/dim]\n")
@@ -241,6 +251,11 @@ class DiscussionOrchestrator:
         if not discussion.moderator:
             raise ValueError("Moderator must be selected before discussion phase")
 
+        effective_max_rounds = (
+            self._REQUIREMENT_SAFETY_MAX_ROUNDS
+            if discussion.flow == "requirement"
+            else max_rounds
+        )
         moderator_cfg = self.config.get_agent(discussion.moderator)
 
         phase = DiscussionPhase(
@@ -264,14 +279,16 @@ class DiscussionOrchestrator:
                     },
                 })
 
-        for round_num in range(1, max_rounds + 1):
-            console.print(
-                f"\n[bold cyan]Phase 2: 讨论（第 {round_num} 轮 / 最多 {max_rounds} 轮）[/bold cyan]\n"
-            )
+        for round_num in range(1, effective_max_rounds + 1):
+            if discussion.flow == "requirement":
+                console.print(f"\n[bold cyan]Phase 2: 需求澄清（第 {round_num} 轮）[/bold cyan]\n")
+            else:
+                console.print(
+                    f"\n[bold cyan]Phase 2: 讨论（第 {round_num} 轮 / 最多 {effective_max_rounds} 轮）[/bold cyan]\n"
+                )
 
-            # Debug: Check other agents
-            other_agents = [aid for aid in discussion.agents if aid != discussion.moderator]
-            if not other_agents:
+            participants = self._discussion_participants(discussion)
+            if not participants:
                 console.print("[yellow]警告：没有其他 Agent 参与讨论（主持人为唯一参与者）[/yellow]")
                 break
 
@@ -280,7 +297,7 @@ class DiscussionOrchestrator:
             moderator_opening = self._run_moderator_opening(
                 discussion=discussion,
                 round_num=round_num,
-                max_rounds=max_rounds,
+                max_rounds=effective_max_rounds,
                 history=history,
                 streaming_runner=streaming_runner,
             )
@@ -293,7 +310,7 @@ class DiscussionOrchestrator:
             console.print(Panel(moderator_opening, border_style="yellow"))
 
             # Step 2: Other agents respond sequentially
-            console.print(f"[dim]开始讨论轮次，其他参与者: {other_agents}[/dim]")
+            console.print(f"[dim]开始讨论轮次，参与者: {participants}[/dim]")
             round_responses = self._run_discussion_round(
                 discussion=discussion,
                 moderator_opening=moderator_opening,
@@ -337,19 +354,27 @@ class DiscussionOrchestrator:
             console.print(f"\n[dim]本轮 {len(round_responses)} 人发言完成[/dim]\n")
 
             # Consensus detection
-            consensus = self._check_consensus(round_responses)
-            if consensus.consensus_reached:
-                console.print(
-                    f"[green]✓ 检测到共识达成（{consensus.consensus_level}）："
-                    f"{consensus.recommendation}[/green]\n"
-                )
-                break
+            if discussion.flow != "requirement":
+                consensus = self._check_consensus(round_responses)
+                if consensus.consensus_reached:
+                    console.print(
+                        f"[green]✓ 检测到共识达成（{consensus.consensus_level}）："
+                        f"{consensus.recommendation}[/green]\n"
+                    )
+                    break
 
             # User decision point
             if should_conclude:
-                console.print("[yellow]💡 主持人建议结束讨论：各方观点已充分表达[/yellow]\n")
+                if discussion.flow == "requirement":
+                    console.print("[yellow]💡 需求已基本澄清，进入最终整理[/yellow]\n")
+                else:
+                    console.print("[yellow]💡 主持人建议结束讨论：各方观点已充分表达[/yellow]\n")
+                break
 
-            if round_num < max_rounds:
+            if discussion.flow == "requirement":
+                continue
+
+            if round_num < effective_max_rounds:
                 choice = console.input(
                     "[c] 继续下一轮  [f] 补充意见后继续  [d] 结束讨论\n选择: "
                 ).strip().lower()
@@ -362,6 +387,11 @@ class DiscussionOrchestrator:
                     if feedback:
                         discussion.user_feedbacks.append(f"第{round_num}轮后: {feedback}")
                         console.print("[dim]意见已记录[/dim]\n")
+
+        if discussion.flow == "requirement" and len(phase.rounds) >= effective_max_rounds:
+            console.print(
+                "[yellow]⚠ 需求讨论达到内部安全轮次上限，自动进入最终整理[/yellow]\n"
+            )
 
         return phase
 
@@ -424,14 +454,14 @@ class DiscussionOrchestrator:
         history: List[Dict],
         streaming_runner=None,
     ) -> Dict[str, str]:
-        """Run one round of discussion (non-moderator agents respond)."""
+        """Run one round of discussion."""
         template = self._prompt_for(discussion, "discussion_response.md")
         moderator_cfg = self.config.get_agent(discussion.moderator)
 
         responses: Dict[str, str] = {}
-        other_agents = [aid for aid in discussion.agents if aid != discussion.moderator]
+        participants = self._discussion_participants(discussion)
 
-        for agent_id in other_agents:
+        for agent_id in participants:
             agent_cfg = self.config.get_agent(agent_id)
             console.print(f"[dim]准备调用 {agent_cfg.name}...[/dim]")
 
@@ -525,7 +555,10 @@ class DiscussionOrchestrator:
 
         When streaming_runner is provided, invocation uses streaming output.
         """
-        console.print("\n[bold cyan]Phase 3: 生成结果文档[/bold cyan]\n")
+        if discussion.flow == "requirement":
+            console.print("\n[bold cyan]Phase 3: 总结讨论并生成需求文档[/bold cyan]\n")
+        else:
+            console.print("\n[bold cyan]Phase 3: 生成结果文档[/bold cyan]\n")
 
         if not discussion.moderator:
             raise ValueError("Moderator must be selected")

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from cli_assistant import _confirm_config, _resolve_moderator
+from cli_assistant import _confirm_config, _input_multiline, _resolve_moderator
 
 
 class TestResolveModerator:
@@ -68,3 +68,31 @@ class TestConfirmConfig:
         assert disc_config == {"max_rounds": 3}
         mock_input.assert_not_called()
         mock_print.assert_not_called()
+
+
+class TestInputMultiline:
+    @patch("cli_assistant.console.input", return_value="")
+    @patch("cli_assistant.console.print")
+    def test_blank_first_line_skips_input(
+        self,
+        mock_print,
+        mock_input,
+    ):
+        value = _input_multiline("测试标题", "测试提示")
+
+        assert value == ""
+        mock_input.assert_called_once_with("> ")
+        assert mock_print.call_count == 2
+
+    @patch("cli_assistant.console.input", side_effect=["第一行", "第二行", ""])
+    @patch("cli_assistant.console.print")
+    def test_empty_line_ends_after_collecting_lines(
+        self,
+        mock_print,
+        mock_input,
+    ):
+        value = _input_multiline("测试标题", "测试提示")
+
+        assert value == "第一行\n第二行"
+        assert mock_input.call_count == 3
+        assert mock_print.call_count == 2

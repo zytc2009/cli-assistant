@@ -156,6 +156,65 @@ class TestRunDiscussionPhase:
         with pytest.raises(ValueError, match="Moderator must be selected"):
             orchestrator.run_discussion_phase(sample_discussion)
 
+    @patch("lib.discussion_orchestrator.save_discussion")
+    @patch("lib.discussion_orchestrator.console.input")
+    def test_requirement_flow_runs_until_moderator_concludes(
+        self,
+        mock_input: MagicMock,
+        mock_save: MagicMock,
+        orchestrator: DiscussionOrchestrator,
+        sample_discussion: Discussion,
+    ):
+        phase1 = DiscussionPhase(
+            phase_type="independent",
+            phase_index=1,
+            rounds=[
+                DiscussionRound(
+                    round_num=1,
+                    responses={
+                        "claude-sonnet": "已知 Goal，仍缺 Acceptance Criteria",
+                        "codex-o4-mini": "缺少 Inputs 约束",
+                    },
+                )
+            ],
+        )
+        sample_discussion.phases.append(phase1)
+        sample_discussion.moderator = "claude-sonnet"
+        sample_discussion.flow = "requirement"
+
+        with patch.object(
+            orchestrator,
+            "_run_moderator_opening",
+            side_effect=["[CONTINUE] 继续澄清验收标准", "[SUGGEST_CONCLUDE] 字段已清晰"],
+        ):
+            with patch.object(
+                orchestrator,
+                "_run_discussion_round",
+                return_value={"codex-o4-mini": "补充澄清内容"},
+            ):
+                with patch.object(orchestrator, "_check_consensus") as mock_consensus:
+                    phase = orchestrator.run_discussion_phase(
+                        sample_discussion,
+                        max_rounds=3,
+                    )
+
+        assert len(phase.rounds) == 2
+        mock_consensus.assert_not_called()
+        mock_input.assert_not_called()
+
+    def test_requirement_flow_uses_moderator_as_fallback_participant(
+        self,
+        orchestrator: DiscussionOrchestrator,
+        sample_discussion: Discussion,
+    ):
+        sample_discussion.agents = ["claude-sonnet"]
+        sample_discussion.moderator = "claude-sonnet"
+        sample_discussion.flow = "requirement"
+
+        participants = orchestrator._discussion_participants(sample_discussion)
+
+        assert participants == ["claude-sonnet"]
+
 
 class TestCheckConsensus:
     def test_returns_unknown_when_no_agents(self, orchestrator: DiscussionOrchestrator):
