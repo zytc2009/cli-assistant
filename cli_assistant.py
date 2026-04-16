@@ -519,8 +519,10 @@ def _run_interactive_wizard():
     if flow == "requirement":
         console.print("\n[bold cyan][Visual Companion][/bold cyan]")
         console.print("[dim]可在浏览器中实时查看需求讨论的可视化进度板[/dim]")
-        use_visual = console.input("是否启用 Visual Companion? [yes/no, 默认 no]: ").strip().lower()
-        if use_visual in ("y", "yes"):
+        console.print("  [1] yes — 启用（适合涉及 UI/架构/流程图的需求）")
+        console.print("  [2] no  — 不启用（默认，纯文本讨论）")
+        use_visual = console.input("请选择 [1/2，默认 2]: ").strip().lower()
+        if use_visual in ("1", "yes", "y"):
             from lib.visual_companion import VisualCompanion
             visual_companion = VisualCompanion(BASE_DIR)
             url = visual_companion.start()
