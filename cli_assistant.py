@@ -57,9 +57,19 @@ def _make_orchestrator(config: Config, runner: AgentRunner) -> Orchestrator:
     return Orchestrator(config=config, base_dir=BASE_DIR, runner=runner)
 
 
-def _make_discussion_orchestrator(config: Config, runner: AgentRunner) -> DiscussionOrchestrator:
+def _make_discussion_orchestrator(
+    config: Config,
+    runner: AgentRunner,
+    visual_companion=None,
+) -> DiscussionOrchestrator:
     summarizer = _pick_summarizer(config)
-    return DiscussionOrchestrator(config=config, base_dir=BASE_DIR, runner=runner, summarizer_agent=summarizer)
+    return DiscussionOrchestrator(
+        config=config,
+        base_dir=BASE_DIR,
+        runner=runner,
+        summarizer_agent=summarizer,
+        visual_companion=visual_companion,
+    )
 
 
 def _split_agents(value: str) -> list[str]:
@@ -504,61 +514,84 @@ def _run_interactive_wizard():
     # Initialize streaming runner
     streaming_runner = StreamingRunner(config.agents)
 
-    # Initialize orchestrator (for non-streaming methods if needed)
-    orchestrator = _make_discussion_orchestrator(config, _make_runner(config))
-
-    # Phase 1: Independent opinions with streaming
-    try:
-        orchestrator.run_independent_phase_streaming(discussion, streaming_runner)
-    except Exception as e:
-        console.print(f"[red]Phase 1 执行失败: {e}[/red]")
-        import traceback
-        traceback.print_exc()
-        return
-
-    # User feedback before discussion — prompt depends on flow
+    # Visual companion setup
+    visual_companion = None
     if flow == "requirement":
-        feedback = _input_multiline(
-            label="请回答以上各 AI 提出的待澄清问题",
-            hint="可一次性回答多个问题，多行输入，空行结束。直接空行跳过表示暂不补充。",
-        ).strip()
-        if feedback:
-            discussion.user_feedbacks.append(f"需求澄清回答: {feedback}")
-            console.print()
-    else:
-        console.print("[dim]（可选）补充意见或约束（直接回车跳过）:[/dim]")
-        feedback = console.input("> ").strip()
-        if feedback:
-            discussion.user_feedbacks.append(f"讨论前: {feedback}")
-            console.print()
+        console.print("\n[bold cyan][Visual Companion][/bold cyan]")
+        console.print("[dim]可在浏览器中实时查看需求讨论的可视化进度板[/dim]")
+        use_visual = console.input("是否启用 Visual Companion? [y/N]: ").strip().lower()
+        if use_visual == "y":
+            from lib.visual_companion import VisualCompanion
+            visual_companion = VisualCompanion(BASE_DIR)
+            url = visual_companion.start()
+            if url:
+                console.print(f"[green]✓ Visual Companion 已启动:[/green] {url}")
+                console.print("[dim]讨论过程中会自动刷新看板，请保持浏览器窗口打开[/dim]\n")
+            else:
+                console.print("[yellow]Visual Companion 启动失败，将继续纯文本讨论[/yellow]\n")
+                visual_companion = None
 
-    # Phase 2: Discussion with streaming
-    try:
-        orchestrator.run_discussion_phase_streaming(
-            discussion,
-            streaming_runner,
-            max_rounds=disc_config["max_rounds"],
-        )
-    except Exception as e:
-        console.print(f"[red]Phase 2 执行失败: {e}[/red]")
-        import traceback
-        traceback.print_exc()
-        # Save current state before exit
-        from lib.meeting import save_discussion
-        save_discussion(discussion, Path("meetings"))
-        console.print("[yellow]当前讨论状态已保存[/yellow]")
-        return
+    # Initialize orchestrator (for non-streaming methods if needed)
+    orchestrator = _make_discussion_orchestrator(
+        config, _make_runner(config), visual_companion=visual_companion
+    )
 
-    # Phase 3: Synthesis with streaming
     try:
-        final_output = orchestrator.run_synthesis_phase_streaming(discussion, streaming_runner)
-    except Exception as e:
-        console.print(f"[red]Phase 3 执行失败: {e}[/red]")
-        # Save current state before exit
-        from lib.meeting import save_discussion
-        save_discussion(discussion, Path("meetings"))
-        console.print("[yellow]当前讨论状态已保存[/yellow]")
-        raise
+        # Phase 1: Independent opinions with streaming
+        try:
+            orchestrator.run_independent_phase_streaming(discussion, streaming_runner)
+        except Exception as e:
+            console.print(f"[red]Phase 1 执行失败: {e}[/red]")
+            import traceback
+            traceback.print_exc()
+            return
+
+        # User feedback before discussion — prompt depends on flow
+        if flow == "requirement":
+            feedback = _input_multiline(
+                label="请回答以上各 AI 提出的待澄清问题",
+                hint="可一次性回答多个问题，多行输入，空行结束。直接空行跳过表示暂不补充。",
+            ).strip()
+            if feedback:
+                discussion.user_feedbacks.append(f"需求澄清回答: {feedback}")
+                console.print()
+        else:
+            console.print("[dim]（可选）补充意见或约束（直接回车跳过）:[/dim]")
+            feedback = console.input("> ").strip()
+            if feedback:
+                discussion.user_feedbacks.append(f"讨论前: {feedback}")
+                console.print()
+
+        # Phase 2: Discussion with streaming
+        try:
+            orchestrator.run_discussion_phase_streaming(
+                discussion,
+                streaming_runner,
+                max_rounds=disc_config["max_rounds"],
+            )
+        except Exception as e:
+            console.print(f"[red]Phase 2 执行失败: {e}[/red]")
+            import traceback
+            traceback.print_exc()
+            # Save current state before exit
+            from lib.meeting import save_discussion
+            save_discussion(discussion, Path("meetings"))
+            console.print("[yellow]当前讨论状态已保存[/yellow]")
+            return
+
+        # Phase 3: Synthesis with streaming
+        try:
+            final_output = orchestrator.run_synthesis_phase_streaming(discussion, streaming_runner)
+        except Exception as e:
+            console.print(f"[red]Phase 3 执行失败: {e}[/red]")
+            # Save current state before exit
+            from lib.meeting import save_discussion
+            save_discussion(discussion, Path("meetings"))
+            console.print("[yellow]当前讨论状态已保存[/yellow]")
+            raise
+    finally:
+        if visual_companion:
+            visual_companion.stop()
 
     # Show completion
     console.print("[bold green]══════════════════════════════════════════════════════[/bold green]")

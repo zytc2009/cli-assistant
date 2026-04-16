@@ -26,6 +26,7 @@ from .prompt_builder import (
     build_requirement_round_prompt,
     build_synthesis_prompt,
 )
+from .visual_companion import VisualCompanion
 
 console = Console()
 
@@ -53,11 +54,19 @@ class DiscussionOrchestrator:
     ]
     _REQUIREMENT_SAFETY_MAX_ROUNDS = 12
 
-    def __init__(self, config: Config, base_dir, runner: AgentRunner, summarizer_agent: str = "claude-sonnet"):
+    def __init__(
+        self,
+        config: Config,
+        base_dir,
+        runner: AgentRunner,
+        summarizer_agent: str = "claude-sonnet",
+        visual_companion: Optional[VisualCompanion] = None,
+    ):
         self.config = config
         self.base_dir = base_dir
         self.runner = runner
         self.summarizer_agent = summarizer_agent
+        self.visual_companion = visual_companion
 
     def _prompt_for(self, discussion: Discussion, default_name: str) -> str:
         """Load the prompt template appropriate for the discussion's flow."""
@@ -182,6 +191,66 @@ class DiscussionOrchestrator:
         console.print(Panel("\n".join(lines), title="需求状态", border_style="cyan"))
         return status
 
+    def _push_requirement_status_visual(
+        self,
+        discussion: Discussion,
+        round_responses: Optional[Dict[str, str]] = None,
+        title: str = "需求澄清看板",
+        name: str = "requirement-status",
+    ) -> None:
+        """Push a visual status board to the browser companion."""
+        if not self.visual_companion:
+            return
+
+        status = self._requirement_field_status(
+            discussion, round_responses=round_responses
+        )
+        unclear: List[str] = []
+        if (
+            discussion.phases
+            and len(discussion.phases) > 1
+            and discussion.phases[1].rounds
+        ):
+            latest_round = discussion.phases[1].rounds[-1]
+            unclear = self._extract_unclear_points(latest_round.responses)
+
+        converged_html = "".join(
+            f'<div class="section"><div class="label">{field}</div><p>{status.get(field, "—")}</p></div>'
+            for field in self._REQUIREMENT_FIELDS
+            if field in status
+        )
+
+        unclear_html = ""
+        if unclear:
+            items = "".join(f"<li>{pt}</li>" for pt in unclear)
+            unclear_html = f'<div class="section"><div class="label">待澄清问题</div><ul>{items}</ul></div>'
+
+        pending = [f for f in self._REQUIREMENT_FIELDS if f not in status]
+        pending_html = ""
+        if pending:
+            items = "".join(f"<li>{f}</li>" for f in pending)
+            pending_html = f'<div class="section"><div class="label">待收敛字段</div><ul>{items}</ul></div>'
+
+        round_num = 0
+        if discussion.flow == "requirement" and len(discussion.phases) > 1:
+            round_num = len(discussion.phases[1].rounds)
+        elif discussion.phases:
+            round_num = sum(len(p.rounds) for p in discussion.phases)
+
+        html = (
+            f'<h2>{title}</h2>\n'
+            f'<p class="subtitle">第 {round_num} 轮更新</p>\n'
+            f'<div class="section"><div class="label">已收敛 ({len(status)}/{len(self._REQUIREMENT_FIELDS)})</div></div>\n'
+            f'{converged_html}\n'
+            f'{pending_html}\n'
+            f'{unclear_html}'
+        )
+
+        filename = self.visual_companion.write_screen(html, name)
+        console.print(
+            f"[dim]Visual companion: {self.visual_companion.url} (screen {filename})[/dim]"
+        )
+
     def _collect_requirement_feedback(self) -> str:
         console.print("[dim]（可选）补充需求信息，多行输入，空行结束；直接空行跳过[/dim]")
         lines: List[str] = []
@@ -296,6 +365,16 @@ class DiscussionOrchestrator:
 
         save_discussion(discussion, self.base_dir)
         console.print(f"\n[green]✓ Phase 1 完成[/green] ({len(responses)} 个观点)\n")
+
+        if discussion.flow == "requirement" and self.visual_companion:
+            agent_names = [self.config.get_agent(aid).name for aid in discussion.agents]
+            html = (
+                f'<h2>需求讨论开始</h2>\n'
+                f'<p class="subtitle">{len(responses)} 位 AI 已提交初步理解</p>\n'
+                f'<div class="section"><div class="label">参会者</div><p>{"、".join(agent_names)}</p></div>\n'
+                f'<div class="section"><p>进入 Phase 2 迭代澄清后，此处将实时显示需求收敛进度。</p></div>'
+            )
+            self.visual_companion.write_screen(html, "phase1-welcome")
 
         return phase
 
@@ -665,6 +744,15 @@ class DiscussionOrchestrator:
             status = self._show_requirement_status(
                 discussion, round_responses=round_responses
             )
+
+            # Update visual companion
+            self._push_requirement_status_visual(
+                discussion,
+                round_responses=round_responses,
+                title="需求澄清看板",
+                name=f"round-{round_num}",
+            )
+
             all_converged = len(status) == len(self._REQUIREMENT_FIELDS)
 
             # For requirement flow, only auto-exit when ALL 5 fields have
@@ -998,6 +1086,12 @@ class DiscussionOrchestrator:
         """
         if discussion.flow == "requirement":
             console.print("\n[bold cyan]Phase 3: 总结讨论并生成需求文档[/bold cyan]\n")
+            if self.visual_companion:
+                self.visual_companion.write_screen(
+                    '<div style="display:flex;align-items:center;justify-content:center;min-height:60vh">'
+                    '<p class="subtitle">正在生成最终需求文档...</p></div>',
+                    "synthesis-start",
+                )
         else:
             console.print("\n[bold cyan]Phase 3: 生成结果文档[/bold cyan]\n")
 
@@ -1068,6 +1162,32 @@ class DiscussionOrchestrator:
             return ""
 
         final_output = response.content
+
+        # ── Auto-review for requirement flow ──────────────────────────────────
+        if discussion.flow == "requirement":
+            approved, review_text = self._review_requirement(final_output)
+            if not approved:
+                console.print(Panel(review_text, title="需求审阅结果", border_style="yellow"))
+                fix = console.input("\n是否根据审阅意见自动修正需求文档？ [y/N]: ").strip().lower()
+                if fix == "y":
+                    console.print("[dim]正在修正需求文档...[/dim]")
+                    revised = self._revise_requirement(
+                        discussion=discussion,
+                        original_requirement=final_output,
+                        review_feedback=review_text,
+                        synthesizer_id=synthesizer_id,
+                        streaming_runner=streaming_runner,
+                    )
+                    if revised:
+                        final_output = revised
+                        console.print("[green]✓ 已修正[/green]\n")
+                    else:
+                        console.print("[yellow]修正失败，保留原始版本[/yellow]\n")
+                else:
+                    console.print("[dim]跳过修正，保留原始版本[/dim]\n")
+            else:
+                console.print("[dim]需求审阅通过[/dim]\n")
+
         discussion.final_output = final_output
         discussion.status = "finalized"
 
@@ -1091,6 +1211,115 @@ class DiscussionOrchestrator:
     ) -> str:
         """Phase 3 with streaming output (calls unified method)."""
         return self.run_synthesis_phase(discussion, streaming_runner=streaming_runner)
+
+    # ── Requirement Review & Revision ─────────────────────────────────────────
+
+    def _review_requirement(self, requirement_doc: str) -> tuple[bool, str]:
+        """Run automatic spec review on the generated requirement document.
+
+        Returns:
+            (approved, review_text)
+        """
+        try:
+            template = self.config.prompt("requirement_reviewer.md")
+        except Exception:
+            # Prompt missing — skip review silently
+            return True, ""
+
+        prompt = template.format(requirement_doc=requirement_doc)
+
+        try:
+            response = self.runner.invoke_with_retry(self.summarizer_agent, prompt)
+        except Exception as e:
+            console.print(f"[dim]需求审阅失败（跳过）: {e}[/dim]")
+            return True, ""
+
+        if not response.success:
+            console.print("[dim]需求审阅失败（跳过）[/dim]")
+            return True, ""
+
+        review_text = response.content.strip()
+        approved = "Approved" in review_text and "Issues Found" not in review_text
+        # Fallback: if the model doesn't follow the exact format, look for obvious issue markers
+        if not approved:
+            # If there are actual issue bullets, it's not approved
+            if "**问题（如有）：**" in review_text or "**问题:**" in review_text or "- [" in review_text:
+                approved = False
+            else:
+                approved = True
+
+        return approved, review_text
+
+    def _revise_requirement(
+        self,
+        discussion: Discussion,
+        original_requirement: str,
+        review_feedback: str,
+        synthesizer_id: str,
+        streaming_runner=None,
+    ) -> str:
+        """Revise requirement document based on review feedback."""
+        synthesizer_cfg = self.config.get_agent(synthesizer_id)
+
+        # Rebuild full history (same logic as run_synthesis_phase)
+        full_history: List[Dict] = []
+        if discussion.phases and len(discussion.phases) >= 1:
+            phase1 = discussion.phases[0]
+            if phase1.rounds:
+                for r in phase1.rounds:
+                    full_history.append({
+                        "round": len(full_history) + 1,
+                        "phase": "独立发言",
+                        "responses": {
+                            self.config.get_agent(aid).name: content
+                            for aid, content in r.responses.items()
+                        },
+                    })
+        if len(discussion.phases) > 1:
+            phase2 = discussion.phases[1]
+            for r in phase2.rounds:
+                round_responses = {
+                    self.config.get_agent(aid).name: content
+                    for aid, content in r.responses.items()
+                }
+                if r.moderator_opening:
+                    round_responses[f"{synthesizer_cfg.name}(主持人)"] = r.moderator_opening
+                full_history.append({
+                    "round": len(full_history) + 1,
+                    "phase": "讨论",
+                    "responses": round_responses,
+                })
+
+        history_text = "\n\n".join(
+            f"### Round {h['round']} ({h['phase']})\n" + "\n".join(f"**{k}**: {v}" for k, v in h["responses"].items())
+            for h in full_history
+        )
+        feedback_text = "\n".join(discussion.user_feedbacks) if discussion.user_feedbacks else "（无）"
+
+        revise_prompt = (
+            f"你是 {synthesizer_cfg.name}。\n\n"
+            f"## 原始需求\n\n{discussion.user_idea}\n\n"
+            f"## 完整讨论记录\n\n{history_text}\n\n"
+            f"## 用户补充\n\n{feedback_text}\n\n"
+            f"## 之前生成的 requirement.md\n\n{original_requirement}\n\n"
+            f"## 审阅意见\n\n{review_feedback}\n\n"
+            f"## 你的任务\n\n"
+            f"请根据审阅意见修改 requirement.md，输出修正后的完整文档。\n"
+            f"严格遵循原有格式要求：只包含 Goal / Scope / Inputs / Outputs / Acceptance Criteria / Open Questions 六个段落。\n"
+            f"输出的第一行必须是 `# Requirement: ...`，不要添加任何前言或解释。"
+        )
+
+        if streaming_runner is not None:
+            response = streaming_runner.invoke_with_retry_streaming(
+                agent_name=synthesizer_id,
+                prompt_content=revise_prompt,
+                show_header=False,
+            )
+        else:
+            with console.status(f"[yellow]{synthesizer_cfg.name} 正在修正需求文档...[/yellow]"):
+                response = self.runner.invoke_with_retry(synthesizer_id, revise_prompt)
+
+        return response.content if response.success else ""
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
