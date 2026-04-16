@@ -99,7 +99,7 @@ class DiscussionOrchestrator:
 
     def _extract_converged_fields(self, text: str) -> Dict[str, str]:
         fields: Dict[str, str] = {}
-        for raw_field, value in re.findall(r"\[CONVERGED\]\s*([^:\n]+)\s*:\s*(.+)", text):
+        for raw_field, value in re.findall(r"\[CONVERGED\]\s*([^:\n\uff1a]+)\s*[:\uff1a]\s*(.+?)(?=\n\s*[-\u2022\u25cf]|\n\s*\[CONVERGED\]|$)", text, re.DOTALL):
             field_name = self._normalize_requirement_field(raw_field)
             if field_name:
                 fields[field_name] = value.strip()

@@ -520,13 +520,18 @@ def _run_interactive_wizard():
         console.print("\n[bold cyan][Visual Companion][/bold cyan]")
         console.print("[dim]可在浏览器中实时查看需求讨论的可视化进度板[/dim]")
         use_visual = console.input("是否启用 Visual Companion? [y/N]: ").strip().lower()
-        if use_visual == "y":
+        if use_visual in ("y", "yes"):
             from lib.visual_companion import VisualCompanion
             visual_companion = VisualCompanion(BASE_DIR)
             url = visual_companion.start()
             if url:
                 console.print(f"[green]✓ Visual Companion 已启动:[/green] {url}")
                 console.print("[dim]讨论过程中会自动刷新看板，请保持浏览器窗口打开[/dim]\n")
+                try:
+                    import webbrowser
+                    webbrowser.open(url)
+                except Exception:
+                    pass
             else:
                 console.print("[yellow]Visual Companion 启动失败，将继续纯文本讨论[/yellow]\n")
                 visual_companion = None
