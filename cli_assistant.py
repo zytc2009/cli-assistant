@@ -560,6 +560,12 @@ def _run_interactive_wizard():
             if feedback:
                 discussion.user_feedbacks.append(f"需求澄清回答: {feedback}")
                 console.print()
+
+            # Visual option phase (only for requirement flow with companion enabled)
+            if visual_companion:
+                visual_selection = orchestrator.run_visual_option_phase(discussion, streaming_runner)
+                if visual_selection:
+                    discussion.user_feedbacks.append(f"视觉方案选择: {visual_selection}")
         else:
             console.print("[dim]（可选）补充意见或约束（直接回车跳过）:[/dim]")
             feedback = console.input("> ").strip()

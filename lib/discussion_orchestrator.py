@@ -442,6 +442,97 @@ class DiscussionOrchestrator:
             )
             return selected_id
 
+    # ── Visual Option Phase ──────────────────────────────────────────────────
+
+    def run_visual_option_phase(
+        self,
+        discussion: Discussion,
+        streaming_runner=None,
+    ) -> str:
+        """Generate visual options after Phase 1 if the topic involves UI/architecture/flow.
+
+        Returns the user's selection text (or empty string if skipped / no visual needed).
+        """
+        if not self.visual_companion:
+            return ""
+
+        if not discussion.phases or not discussion.phases[0].rounds:
+            return ""
+
+        try:
+            template = self.config.prompt("visual_option_generator.md")
+        except Exception:
+            return ""
+
+        phase1 = discussion.phases[0].rounds[0]
+        responses_text = "\n\n".join(
+            f"### {self.config.get_agent(aid).name}\n{content}"
+            for aid, content in phase1.responses.items()
+        )
+
+        prompt = template.format(
+            user_idea=discussion.user_idea,
+            phase1_responses=responses_text,
+        )
+
+        synthesizer_cfg = self.config.get_agent(self.summarizer_agent)
+        console.print("\n[dim]正在分析是否需要生成可视化方案...[/dim]")
+
+        if streaming_runner is not None:
+            response = streaming_runner.invoke_with_retry_streaming(
+                agent_name=self.summarizer_agent,
+                prompt_content=prompt,
+                show_header=False,
+            )
+        else:
+            with console.status(f"[yellow]{synthesizer_cfg.name} 正在生成视觉方案...[/yellow]"):
+                response = self.runner.invoke_with_retry(self.summarizer_agent, prompt)
+
+        if not response.success:
+            return ""
+
+        content = response.content.strip()
+        if "NO_VISUAL_NEEDED" in content:
+            console.print("[dim]AI 判断当前话题无需可视化方案，继续文本讨论[/dim]\n")
+            return ""
+
+        # Strip markdown code fence if present
+        html = content
+        if html.startswith("```html"):
+            html = html[7:]
+        if html.startswith("```"):
+            html = html[3:]
+        if html.endswith("```"):
+            html = html[:-3]
+        html = html.strip()
+
+        if not html:
+            return ""
+
+        filename = self.visual_companion.write_screen(html, "visual-options")
+        console.print(f"\n[bold cyan]📊 可视化方案已生成[/bold cyan]")
+        console.print(f"[dim]请在浏览器中查看并选择：{self.visual_companion.url} (screen {filename})[/dim]")
+        console.print("[dim]选择完成后，请返回终端按回车继续...[/dim]")
+        try:
+            console.input("")
+        except (KeyboardInterrupt, EOFError):
+            pass
+
+        events = self.visual_companion.read_events()
+        if events:
+            last = events[-1]
+            choice = last.get("choice", "")
+            choice_text = last.get("text", "")
+            selection = f"选择了 [{choice}] {choice_text}" if choice else ""
+            if selection:
+                console.print(f"[green]✓ 已记录选择：{selection}[/green]\n")
+                self.visual_companion.write_waiting_screen()
+                return selection
+
+        console.print("[dim]未检测到浏览器选择，继续文本讨论[/dim]\n")
+        self.visual_companion.write_waiting_screen()
+        return ""
+
     # ── Phase 2 ──────────────────────────────────────────────────────────────
 
     def run_discussion_phase(
