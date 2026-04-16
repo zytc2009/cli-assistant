@@ -23,7 +23,7 @@
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│                     cli_assistant.py (CLI)                      │
+│                     cli_assistant.py (CLI)               │
 │  discuss / new / continue / interactive / finalize /     │
 │  list / show / test-round / agent (detect/list/add/remove)│
 └────────────────────────┬─────────────────────────────────┘
@@ -47,6 +47,12 @@
                        ▼
               各 AI CLI 进程
          (claude / codex / kimi / ...)
+                          ▲
+                          │ (optional)
+              ┌───────────┴───────────┐
+              │  VisualCompanion       │
+              │  (browser mockups)     │
+              └────────────────────────┘
 ```
 
 ---
@@ -358,6 +364,24 @@ run_session(meeting, session_type, agents, prior_proposal, user_feedback)
 
 ---
 
+### `lib/visual_companion.py` — 浏览器视觉伴侣
+
+管理本地 Node.js HTTP/WebSocket 服务器，为需求讨论提供可视化辅助。
+
+```python
+class VisualCompanion:
+    def start() -> str          # 启动 server，返回 URL
+    def write_screen(html, name) -> str   # 写入 HTML，浏览器自动刷新
+    def read_events() -> List[Dict]       # 读取用户浏览器点击/选择事件
+    def stop()                            # 终止 server 进程
+```
+
+**工作原理**：`visual/server.cjs` 监视 `content/` 目录的 HTML 文件变更，通过 WebSocket 向浏览器广播 `reload` 消息。内容片段会自动注入 `frame-template.html` 提供的主题 CSS 和交互脚本。
+
+**触发时机**：仅在需求讨论中、用户主动启用时生效。
+
+---
+
 ### `lib/discussion_orchestrator.py` — 讨论模式编排器
 
 用于 `discuss` 命令和交互式向导，实现**三阶段结构化讨论**。支持两种 Phase 2 行为，由 `discussion.flow` 决定：
@@ -389,6 +413,21 @@ Phase 1 — run_independent_phase（两种 flow 相同）
   ├── 并行调用（streaming 时顺序实时显示，否则并发收集）
   └── 需求模式输出：已明确字段 / 待澄清问题 / 假设前提
 
+用户回答环节
+└── 用户可一次性回答多个问题，或直接跳过
+
+确认清单 — _run_requirement_confirmation（需求讨论 Phase 2 前）
+  ├── summarizer_agent 综合 Phase 1 + 用户回答
+  ├── 展示：已明确字段 / 准备做的假设 / 仍有疑问
+  └── 用户确认或纠正
+
+视觉方案 — run_visual_option_phase（需求讨论，可选）
+  ├── 仅在 Visual Companion 启用时执行
+  ├── synthesizer agent 分析 Phase 1，判断是否需要可视化方案
+  ├── 若涉及 UI/架构/流程：生成 2-3 个 HTML mockup 推送到浏览器
+  ├── 用户在浏览器点选，事件写入 state/events
+  └── 选择结果追加到 user_feedbacks，注入 Phase 2 上下文
+
 Phase 2 — run_discussion_phase（按 flow 分支）
 
   [自由讨论] 主持人引导，最多 max_rounds 轮
@@ -400,15 +439,11 @@ Phase 2 — run_discussion_phase（按 flow 分支）
     └── 收集讨论记录到 Phase 2
 
   [需求讨论] 无主持人，无轮数限制，_run_requirement_discussion_phase
-    ├── 确认清单（_run_requirement_confirmation，进入循环前执行一次）
-    │   ├── summarizer_agent 综合 Phase 1 + 用户回答，生成结构化摘要
-    │   │   └── 已明确字段 / 准备做的假设 / 仍有疑问
-    │   ├── 展示给用户确认
-    │   └── 用户可输入纠正（直接回车跳过）→ 追加到 user_feedbacks
     ├── while True:
     │   ├── 所有 AI 平等发言（_run_requirement_round）
     │   │   └── 每个 AI 输出：字段认知 / 仍待澄清问题 / 假设 / CONVERGED 声明
     │   ├── 展示已收敛字段状态（_show_requirement_status）
+    │   ├── 若启用 visual_companion → 推送需求澄清看板到浏览器
     │   ├── 若全部 5 个字段 [CONVERGED] → 自动结束
     │   ├── 提取并展示"仍待澄清的问题"（_extract_unclear_points）
     │   └── 可选用户补充（直接回车跳过；输入 d 强制结束）
@@ -417,7 +452,12 @@ Phase 2 — run_discussion_phase（按 flow 分支）
 Phase 3 — run_synthesis_phase（按 flow 选择综合者）
   ├── 自由讨论：由主持人（moderator）综合
   ├── 需求讨论：由 summarizer_agent（最便宜的可用 Agent）综合
-  └── 生成结构化最终文档（requirement.md 或 final_output.md）
+  ├── 生成结构化最终文档（requirement.md 或 final_output.md）
+  ├── 自动质检 — _review_requirement()
+  │   ├── 检查完整性/一致性/清晰度/范围/YAGNI
+  │   ├── 若通过 → 静默保存
+  │   └── 若不通过 → 展示审阅结果，用户可选择自动修正一轮
+  └── 保存最终文档
 ```
 
 **需求讨论 Prompt 结构**（`requirement_discussion_response.md`）

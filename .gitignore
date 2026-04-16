@@ -20,6 +20,7 @@ ENV/
 logs/
 meetings/
 meetings/*
+.visual/
 .coverage
 {output_file}
 *.log

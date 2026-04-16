@@ -483,6 +483,12 @@ Phase 1: 各 AI 独立审视需求
 │   └── 仍有疑问：必须用户回答的问题
 └── 用户确认，或输入纠正（直接回车跳过）
 
+视觉方案选择（可选，仅启用 Visual Companion 时）
+├── AI 判断议题是否涉及 UI/架构/流程图
+├── 若涉及：生成 2-3 个 HTML 方案推送到浏览器
+├── 用户在浏览器点选，选择结果注入后续讨论
+└── 若不涉及：静默跳过，继续文本讨论
+
 Phase 2: 无主持人迭代澄清（无轮数限制）
 ├── 所有 AI 平等发言，每轮输出：
 │   ├── 字段当前认知（Goal/Scope/Inputs/Outputs/AC）
@@ -490,10 +496,14 @@ Phase 2: 无主持人迭代澄清（无轮数限制）
 │   ├── 假设（用户未回答时 AI 自行推进，不再追问）
 │   └── 已收敛的字段 [CONVERGED]
 ├── 每轮后：展示待澄清问题，可选用户补充（回车跳过）
+├── 启用 Visual Companion 时：浏览器同步刷新需求收敛看板
 └── 所有字段收敛 → 自动退出；输入 d → 手动结束
 
 Phase 3: 综合生成 requirement.md
-└── 由最便宜的可用 AI 综合全程信息输出需求文档
+├── 由最便宜的可用 AI 综合全程信息输出需求文档
+├── 自动质检：检查完整性/一致性/清晰度/范围/YAGNI
+├── 若发现问题：提示用户，可选择自动修正一轮
+└── 最终保存 requirement.md
 ```
 
 **与 `new` 模式的区别**
@@ -820,7 +830,10 @@ cli-assistant/
 │       ├── minutes_generator.md
 │       ├── proposal_generator.md
 │       ├── summarizer.md
-│       └── consensus_detector.md
+│       ├── consensus_detector.md
+│       ├── requirement_reviewer.md      # 需求文档自动质检
+│       ├── requirement_*.md             # 需求讨论专用 prompts
+│       └── visual_option_generator.md   # Visual Companion 方案生成
 │
 ├── lib/
 │   ├── config.py                 # 配置加载、数据类、校验
@@ -833,7 +846,13 @@ cli-assistant/
 │   ├── summarizer.py             # 纪要 + 方案文档生成
 │   ├── consensus.py              # 共识检测
 │   ├── context.py                # 上下文压缩
-│   └── cli_detector.py           # CLI 自动检测
+│   ├── cli_detector.py           # CLI 自动检测
+│   └── visual_companion.py       # 浏览器视觉伴侣管理
+│
+├── visual/                       # Visual Companion 服务端
+│   ├── server.cjs                # Node HTTP + WebSocket 服务器
+│   ├── frame-template.html       # 页面框架与主题 CSS
+│   └── helper.js                 # 客户端交互脚本
 │
 ├── tests/                        # 测试（TODO）
 │   ├── unit/                     # 单元测试
@@ -902,6 +921,34 @@ templates:
       2: "给出具体加固建议"
     output: audit_report
 ```
+
+---
+
+## Visual Companion
+
+在需求讨论中启用 Visual Companion 后，系统会在 **Phase 1 结束后** 自动判断议题是否涉及 UI/架构/流程图。若判断为是，会生成 2-3 个 HTML 线框图/架构图方案并推送到本地浏览器，你可以直接点选偏好的方案，选择结果会被记录并纳入后续讨论上下文。
+
+**启用方式**：在交互式向导选择「需求讨论」后，选择 `[1] yes` 启用。
+
+**浏览器看板**：
+- Phase 1 结束：显示各 AI 的初步理解和参会者
+- Phase 2 每轮：实时刷新「需求澄清看板」，展示已收敛字段、待收敛字段和待澄清问题
+- Phase 3：显示「正在生成最终需求文档」
+
+**前置依赖**：需要本地安装 Node.js（用于启动 `visual/server.cjs`）。
+
+---
+
+## 需求文档自动质检
+
+需求讨论进入 Phase 3 后，生成 `requirement.md` 前会自动执行一轮质检，检查维度：
+- **完整性**：是否有 TODO / TBD / 留空占位符
+- **一致性**：各段落之间是否互相矛盾
+- **清晰度**：是否存在可被两种理解的歧义表述
+- **范围**：是否过于庞大，涵盖多个可独立子系统
+- **YAGNI**：是否包含过度设计或未请求的功能
+
+若发现问题，终端会展示审阅结果，并询问是否根据审阅意见自动修正一轮。
 
 ---
 
