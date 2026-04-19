@@ -433,6 +433,8 @@ cli_assistant.py agent         Agent 配置管理（detect/list/add/remove）
 
 `requirement.md` 只保留需求层内容，`task.md` 才补 `Constraints`、`Status: ready` 和其他执行层字段。这样需求澄清和项目执行可以分开处理，边界更清楚。
 
+需求讨论的方式刻意靠近 `brainstorming` skill：一次只推进一个关键不确定点，涉及取舍时先给 2-3 个可选方向，最后再收敛成可执行的需求文档。
+
 ---
 
 ### `discuss` — 讨论模式（Phase 1-3）
