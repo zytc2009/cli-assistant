@@ -8,6 +8,7 @@ from typing import Dict, List, Optional
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+from rich.table import Table
 
 from .agent_runner import AgentResponse, AgentRunner
 from .config import Config
@@ -104,6 +105,96 @@ class DiscussionOrchestrator:
             if field_name:
                 fields[field_name] = value.strip()
         return fields
+
+    def _extract_requirement_questions(
+        self,
+        discussion: Discussion,
+        round_responses: Dict[str, str],
+    ) -> List[Dict[str, str]]:
+        """Collect and deduplicate requirement questions from agent responses."""
+        questions: Dict[tuple[str, str], Dict[str, str]] = {}
+
+        for agent_id, content in round_responses.items():
+            try:
+                agent_name = self.config.get_agent(agent_id).name
+            except ValueError:
+                agent_name = agent_id
+
+            match = re.search(
+                r"##\s*3[\.。]?\s*待澄清问题\s*\n(.*?)(?:\n##\s*\d|\Z)",
+                content,
+                re.DOTALL,
+            )
+            if not match:
+                continue
+
+            section = match.group(1).strip()
+            if not section or section == "无":
+                continue
+
+            for raw_line in section.splitlines():
+                line = raw_line.strip()
+                if not line:
+                    continue
+                line = re.sub(r"^[-*•\u2022\u25cf]\s*", "", line)
+                if not line or line == "无":
+                    continue
+
+                field_name = "未分类"
+                question_text = line
+                field_match = re.match(r"\[(?P<field>[^\]]+)\]\s*(?P<question>.+)", line)
+                if field_match:
+                    normalized = self._normalize_requirement_field(field_match.group("field"))
+                    if normalized:
+                        field_name = normalized
+                    else:
+                        field_name = field_match.group("field").strip()
+                    question_text = field_match.group("question").strip()
+
+                key = (field_name, question_text)
+                if key not in questions:
+                    questions[key] = {
+                        "field": field_name,
+                        "question": question_text,
+                        "agents": agent_name,
+                    }
+                elif agent_name not in questions[key]["agents"].split("、"):
+                    questions[key]["agents"] += f"、{agent_name}"
+
+        return list(questions.values())
+
+    def _build_requirement_questions_table(
+        self,
+        discussion: Discussion,
+        round_responses: Dict[str, str],
+    ) -> Table:
+        """Render phase 1 clarification questions as a compact table."""
+        table = Table(
+            title="待澄清问题汇总",
+            show_lines=True,
+            expand=True,
+        )
+        table.add_column("字段", style="cyan", no_wrap=True)
+        table.add_column("待澄清问题", style="white")
+        table.add_column("来源 AI", style="magenta", no_wrap=True)
+
+        items = self._extract_requirement_questions(discussion, round_responses)
+        if not items:
+            table.add_row("—", "（暂无需要额外澄清的问题）", "—")
+            return table
+
+        for item in items:
+            table.add_row(item["field"], item["question"], item["agents"])
+        return table
+
+    def _show_requirement_questions_table(
+        self,
+        discussion: Discussion,
+        round_responses: Dict[str, str],
+    ) -> None:
+        """Show the aggregated clarification table for requirement flow."""
+        table = self._build_requirement_questions_table(discussion, round_responses)
+        console.print(table)
 
     def _requirement_field_status(
         self,
@@ -375,6 +466,11 @@ class DiscussionOrchestrator:
                 f'<div class="section"><p>进入 Phase 2 迭代澄清后，此处将实时显示需求收敛进度。</p></div>'
             )
             self.visual_companion.write_screen(html, "phase1-welcome")
+
+        if discussion.flow == "requirement":
+            console.print("[bold cyan]Phase 1 待澄清问题汇总[/bold cyan]")
+            console.print("[dim]下面把各 AI 提到的澄清点合并成表，方便你快速查看。[/dim]\n")
+            self._show_requirement_questions_table(discussion, responses)
 
         return phase
 
@@ -857,8 +953,7 @@ class DiscussionOrchestrator:
             unclear = self._extract_unclear_points(round_responses)
             if unclear:
                 console.print("\n[yellow]AI 仍待向你澄清的问题：[/yellow]")
-                for pt in unclear:
-                    console.print(f"  • {pt}")
+                self._show_requirement_questions_table(discussion, round_responses)
 
             # Optional user clarification
             console.print(

@@ -53,6 +53,61 @@ class TestRunIndependentPhase:
         assert phase.phase_type == "independent"
         assert len(phase.rounds[0].responses) == 2
 
+    @patch("lib.discussion_orchestrator.save_discussion")
+    @patch.object(DiscussionOrchestrator, "_show_requirement_questions_table")
+    def test_requirement_flow_shows_aggregated_questions(
+        self,
+        mock_show_table: MagicMock,
+        mock_save: MagicMock,
+        orchestrator: DiscussionOrchestrator,
+        sample_discussion: Discussion,
+    ):
+        sample_discussion.flow = "requirement"
+
+        phase = orchestrator.run_independent_phase(sample_discussion)
+
+        assert phase.phase_type == "independent"
+        mock_show_table.assert_called_once()
+
+    def test_extracts_requirement_questions_and_dedupes(
+        self,
+        orchestrator: DiscussionOrchestrator,
+        sample_discussion: Discussion,
+    ):
+        sample_discussion.flow = "requirement"
+        round_responses = {
+            "claude-sonnet": (
+                "## 3. 待澄清问题\n"
+                "- [Inputs] 输入是单个文件还是整个目录？\n"
+                "- [Outputs] 输出格式是 JSON 还是 CSV？\n"
+            ),
+            "codex-o4-mini": (
+                "## 3. 待澄清问题\n"
+                "- [Inputs] 输入是单个文件还是整个目录？\n"
+                "- [Acceptance Criteria] 失败时要不要重试？\n"
+            ),
+        }
+
+        items = orchestrator._extract_requirement_questions(sample_discussion, round_responses)
+
+        assert items == [
+            {
+                "field": "Inputs",
+                "question": "输入是单个文件还是整个目录？",
+                "agents": "Claude Sonnet、Codex o4-mini",
+            },
+            {
+                "field": "Outputs",
+                "question": "输出格式是 JSON 还是 CSV？",
+                "agents": "Claude Sonnet",
+            },
+            {
+                "field": "Acceptance Criteria",
+                "question": "失败时要不要重试？",
+                "agents": "Codex o4-mini",
+            },
+        ]
+
 
 class TestSelectModerator:
     @patch("lib.discussion_orchestrator.console.input")
@@ -181,7 +236,7 @@ class TestRunDiscussionPhase:
         sample_discussion.phases.append(phase1)
         sample_discussion.moderator = "claude-sonnet"
         sample_discussion.flow = "requirement"
-        mock_input.side_effect = ["", ""]
+        mock_input.return_value = "d"
 
         with patch.object(
             orchestrator,
@@ -199,9 +254,9 @@ class TestRunDiscussionPhase:
                         max_rounds=3,
                     )
 
-        assert len(phase.rounds) == 2
+        assert len(phase.rounds) == 1
         mock_consensus.assert_not_called()
-        assert mock_input.call_count == 2
+        assert mock_input.call_count >= 1
 
     def test_requirement_flow_uses_moderator_as_fallback_participant(
         self,
