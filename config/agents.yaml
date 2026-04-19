@@ -36,7 +36,7 @@ agents:
     command: codex exec -c approval_mode=full-auto -o {output_file} -
     prompt_method: file
     max_tokens: 4000
-    timeout: 90
+    timeout: 180
     strengths: 工程实现、性能优化、成本低
     cost_tier: low
   kimi:
@@ -66,7 +66,7 @@ agents:
     command: codex exec -c approval_mode=full-auto -o {output_file} -
     prompt_method: file
     max_tokens: 4000
-    timeout: 120
+    timeout: 180
     strengths: 复杂推理、数学、算法、工程实现
     cost_tier: medium
   gemini:

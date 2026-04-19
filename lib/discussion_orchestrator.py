@@ -86,6 +86,34 @@ class DiscussionOrchestrator:
             return [discussion.moderator]
         return []
 
+    def _agent_prefers_output_file(self, agent_id: str) -> bool:
+        """Return True when the agent command is file-output oriented."""
+        try:
+            agent_cfg = self.config.get_agent(agent_id)
+        except ValueError:
+            return False
+        return "{output_file}" in agent_cfg.command or agent_cfg.output_method == "file"
+
+    def _invoke_agent_response(
+        self,
+        agent_id: str,
+        prompt: str,
+        streaming_runner=None,
+        show_header: bool = True,
+        status_text: str = "正在思考...",
+    ):
+        """Invoke an agent using streaming only when the CLI really streams."""
+        agent_cfg = self.config.get_agent(agent_id)
+        if streaming_runner is not None and not self._agent_prefers_output_file(agent_id):
+            return streaming_runner.invoke_with_retry_streaming(
+                agent_name=agent_id,
+                prompt_content=prompt,
+                show_header=show_header,
+            )
+
+        with console.status(f"[yellow]{agent_cfg.name} {status_text}[/yellow]"):
+            return self.runner.invoke_with_retry(agent_id, prompt)
+
     def _normalize_requirement_field(self, field_name: str) -> Optional[str]:
         normalized = re.sub(r"\s+", " ", field_name.strip())
         aliases = {
@@ -393,10 +421,12 @@ class DiscussionOrchestrator:
                     agent=agent_cfg,
                     user_idea=discussion.user_idea,
                 )
-                response = streaming_runner.invoke_with_retry_streaming(
-                    agent_name=agent_id,
-                    prompt_content=prompt,
+                response = self._invoke_agent_response(
+                    agent_id,
+                    prompt,
+                    streaming_runner=streaming_runner,
                     show_header=True,
+                    status_text="思考中...",
                 )
                 if response.success:
                     responses[agent_id] = response.content
@@ -574,15 +604,13 @@ class DiscussionOrchestrator:
         synthesizer_cfg = self.config.get_agent(self.summarizer_agent)
         console.print("\n[dim]正在分析是否需要生成可视化方案...[/dim]")
 
-        if streaming_runner is not None:
-            response = streaming_runner.invoke_with_retry_streaming(
-                agent_name=self.summarizer_agent,
-                prompt_content=prompt,
-                show_header=False,
-            )
-        else:
-            with console.status(f"[yellow]{synthesizer_cfg.name} 正在生成视觉方案...[/yellow]"):
-                response = self.runner.invoke_with_retry(self.summarizer_agent, prompt)
+        response = self._invoke_agent_response(
+            self.summarizer_agent,
+            prompt,
+            streaming_runner=streaming_runner,
+            show_header=False,
+            status_text="正在生成视觉方案...",
+        )
 
         if not response.success:
             return ""
@@ -1077,22 +1105,21 @@ class DiscussionOrchestrator:
                 round_num=round_num,
             )
 
-            if streaming_runner is not None:
-                response = streaming_runner.invoke_with_retry_streaming(
-                    agent_name=agent_id,
-                    prompt_content=prompt,
-                    show_header=True,
-                )
-                responses[agent_id] = response.content if response.success else f"[调用失败: {response.error}]"
-            else:
-                with console.status(f"[cyan]{agent_cfg.name} 发言中...[/cyan]"):
-                    response = self.runner.invoke_with_retry(agent_id, prompt)
-                if response.success:
+            response = self._invoke_agent_response(
+                agent_id,
+                prompt,
+                streaming_runner=streaming_runner,
+                show_header=True,
+                status_text="发言中...",
+            )
+            if response.success:
+                if streaming_runner is None or self._agent_prefers_output_file(agent_id):
                     console.print(f"  [green]✓[/green] {agent_cfg.name} ({response.duration_seconds:.1f}s)")
-                    responses[agent_id] = response.content
-                else:
+                responses[agent_id] = response.content
+            else:
+                if streaming_runner is None or self._agent_prefers_output_file(agent_id):
                     console.print(f"  [red]✗[/red] {agent_cfg.name} 失败")
-                    responses[agent_id] = f"[调用失败: {response.error}]"
+                responses[agent_id] = f"[调用失败: {response.error}]"
 
         return responses
 
@@ -1147,18 +1174,15 @@ class DiscussionOrchestrator:
 
         console.print(f"[dim]主持人 prompt 长度: {len(prompt)} 字符[/dim]")
 
-        if streaming_runner is not None:
-            console.print(f"[dim]调用主持人 {moderator_cfg.name} (streaming)...[/dim]")
-            response = streaming_runner.invoke_with_retry_streaming(
-                agent_name=discussion.moderator,
-                prompt_content=prompt,
-                show_header=False,
-            )
+        response = self._invoke_agent_response(
+            discussion.moderator,
+            prompt,
+            streaming_runner=streaming_runner,
+            show_header=False,
+            status_text="正在准备开场引导...",
+        )
+        if streaming_runner is not None and not self._agent_prefers_output_file(discussion.moderator):
             console.print(f"[dim]主持人返回: success={response.success}[/dim]")
-        else:
-            console.print(f"[dim]调用主持人 {moderator_cfg.name}...[/dim]")
-            with console.status(f"[yellow]{moderator_cfg.name} 正在准备开场引导...[/yellow]"):
-                response = self.runner.invoke_with_retry(discussion.moderator, prompt)
 
         return response.content if response.success else "[主持人调用失败，请继续讨论]"
 
@@ -1190,40 +1214,30 @@ class DiscussionOrchestrator:
             )
             console.print(f"[dim]Prompt 长度: {len(prompt)} 字符[/dim]")
 
-            if streaming_runner is not None:
-                console.print(f"[dim]调用 {agent_cfg.name} (streaming)...[/dim]")
-                response = streaming_runner.invoke_with_retry_streaming(
-                    agent_name=agent_id,
-                    prompt_content=prompt,
-                    show_header=True,
+            response = self._invoke_agent_response(
+                agent_id,
+                prompt,
+                streaming_runner=streaming_runner,
+                show_header=True,
+                status_text="发言中...",
+            )
+            if streaming_runner is not None and not self._agent_prefers_output_file(agent_id):
+                console.print(
+                    f"[dim]{agent_cfg.name} 返回: success={response.success}, content长度={len(response.content) if response.content else 0}[/dim]"
                 )
-                console.print(f"[dim]{agent_cfg.name} 返回: success={response.success}, content长度={len(response.content) if response.content else 0}[/dim]")
-                if response.success:
-                    responses[agent_id] = response.content
-                else:
-                    responses[agent_id] = f"[调用失败: {response.error}]"
-            else:
-                with Progress(
-                    SpinnerColumn(),
-                    TextColumn("[progress.description]{task.description}"),
-                    TimeElapsedColumn(),
-                    console=console,
-                    transient=True,
-                ) as progress:
-                    task = progress.add_task(f"  {agent_cfg.name} 发言中...", total=None)
-                    response = self.runner.invoke_with_retry(agent_id, prompt)
-                    progress.update(task, description=f"  {agent_cfg.name} ✓")
 
-                if response.success:
+            if response.success:
+                if streaming_runner is None or self._agent_prefers_output_file(agent_id):
                     console.print(
                         f"  [green]✓[/green] {agent_cfg.name} ({response.duration_seconds:.1f}s)"
                     )
-                    responses[agent_id] = response.content
-                else:
+                responses[agent_id] = response.content
+            else:
+                if streaming_runner is None or self._agent_prefers_output_file(agent_id):
                     console.print(
                         f"  [red]✗[/red] {agent_cfg.name} (失败: {response.error})"
                     )
-                    responses[agent_id] = f"[调用失败: {response.error}]"
+                responses[agent_id] = f"[调用失败: {response.error}]"
 
         return responses
 
@@ -1333,15 +1347,13 @@ class DiscussionOrchestrator:
             all_user_feedbacks=discussion.user_feedbacks,
         )
 
-        if streaming_runner is not None:
-            response = streaming_runner.invoke_with_retry_streaming(
-                agent_name=synthesizer_id,
-                prompt_content=prompt,
-                show_header=True,
-            )
-        else:
-            with console.status(f"[yellow]{synthesizer_cfg.name} 正在综合各方观点...[/yellow]"):
-                response = self.runner.invoke_with_retry(synthesizer_id, prompt)
+        response = self._invoke_agent_response(
+            synthesizer_id,
+            prompt,
+            streaming_runner=streaming_runner,
+            show_header=True,
+            status_text="正在综合各方观点...",
+        )
 
         if not response.success:
             console.print(f"[red]✗ 生成失败: {response.error}[/red]")
@@ -1495,15 +1507,13 @@ class DiscussionOrchestrator:
             f"输出的第一行必须是 `# Requirement: ...`，不要添加任何前言或解释。"
         )
 
-        if streaming_runner is not None:
-            response = streaming_runner.invoke_with_retry_streaming(
-                agent_name=synthesizer_id,
-                prompt_content=revise_prompt,
-                show_header=False,
-            )
-        else:
-            with console.status(f"[yellow]{synthesizer_cfg.name} 正在修正需求文档...[/yellow]"):
-                response = self.runner.invoke_with_retry(synthesizer_id, revise_prompt)
+        response = self._invoke_agent_response(
+            synthesizer_id,
+            revise_prompt,
+            streaming_runner=streaming_runner,
+            show_header=False,
+            status_text="正在修正需求文档...",
+        )
 
         return response.content if response.success else ""
 

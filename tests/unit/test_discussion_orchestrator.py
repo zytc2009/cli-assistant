@@ -69,6 +69,33 @@ class TestRunIndependentPhase:
         assert phase.phase_type == "independent"
         mock_show_table.assert_called_once()
 
+    @patch("lib.discussion_orchestrator.save_discussion")
+    def test_output_file_agents_use_non_streaming_runner(
+        self,
+        mock_save: MagicMock,
+        orchestrator: DiscussionOrchestrator,
+        mock_runner: MagicMock,
+        sample_discussion: Discussion,
+    ):
+        sample_discussion.agents = ["codex-o4-mini"]
+        streaming_runner = MagicMock()
+        mock_runner.invoke_with_retry.return_value = AgentResponse(
+            agent="codex-o4-mini",
+            content="完成",
+            success=True,
+            error=None,
+            duration_seconds=1.2,
+        )
+
+        phase = orchestrator.run_independent_phase(
+            sample_discussion,
+            streaming_runner=streaming_runner,
+        )
+
+        assert phase.phase_type == "independent"
+        streaming_runner.invoke_with_retry_streaming.assert_not_called()
+        mock_runner.invoke_with_retry.assert_called_once()
+
     def test_extracts_requirement_questions_and_dedupes(
         self,
         orchestrator: DiscussionOrchestrator,
