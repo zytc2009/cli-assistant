@@ -128,7 +128,11 @@ presets:
         encoding="utf-8",
     )
     (prompts_dir / "requirement_discussion_response.md").write_text(
-        "You are {agent_name}.\nFeedback: {user_feedback_section}\nRound: {round_num}\nHistory: {history_section}",
+        "You are {agent_name}.\n"
+        "Status: {requirement_status_section}\n"
+        "Questions: {clarification_questions_section}\n"
+        "Feedback: {user_feedback_section}\n"
+        "Round: {round_num}",
         encoding="utf-8",
     )
     (prompts_dir / "requirement_synthesis.md").write_text(
@@ -315,7 +319,11 @@ def prompts_dir(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     (p_dir / "requirement_discussion_response.md").write_text(
-        "You are {agent_name}.\nFeedback: {user_feedback_section}\nRound: {round_num}\nHistory: {history_section}",
+        "You are {agent_name}.\n"
+        "Status: {requirement_status_section}\n"
+        "Questions: {clarification_questions_section}\n"
+        "Feedback: {user_feedback_section}\n"
+        "Round: {round_num}",
         encoding="utf-8",
     )
     (p_dir / "requirement_synthesis.md").write_text(

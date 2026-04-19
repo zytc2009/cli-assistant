@@ -215,6 +215,21 @@ class DiscussionOrchestrator:
             table.add_row(item["field"], item["question"], item["agents"])
         return table
 
+    def _build_requirement_questions_section(
+        self,
+        discussion: Discussion,
+        round_responses: Dict[str, str],
+    ) -> str:
+        """Render phase 1 clarification questions as prompt-friendly markdown."""
+        items = self._extract_requirement_questions(discussion, round_responses)
+        if not items:
+            return "（暂无需要额外核对的问题）"
+
+        lines = []
+        for item in items:
+            lines.append(f"- [{item['field']}] {item['question']}（来源: {item['agents']}）")
+        return "\n".join(lines)
+
     def _show_requirement_questions_table(
         self,
         discussion: Discussion,
@@ -912,6 +927,12 @@ class DiscussionOrchestrator:
                     for aid, content in discussion.phases[0].rounds[0].responses.items()
                 },
             })
+        clarification_questions_section = "（暂无需要额外核对的问题）"
+        if discussion.phases and discussion.phases[0].rounds:
+            clarification_questions_section = self._build_requirement_questions_section(
+                discussion,
+                discussion.phases[0].rounds[0].responses,
+            )
 
         # Show confirmation checklist before entering the loop
         correction = self._run_requirement_confirmation(discussion)
@@ -926,6 +947,7 @@ class DiscussionOrchestrator:
             round_responses = self._run_requirement_round(
                 discussion=discussion,
                 history=history,
+                clarification_questions_section=clarification_questions_section,
                 round_num=round_num,
                 streaming_runner=streaming_runner,
             )
@@ -1087,6 +1109,7 @@ class DiscussionOrchestrator:
         self,
         discussion: Discussion,
         history: List[Dict],
+        clarification_questions_section: str,
         round_num: int,
         streaming_runner=None,
     ) -> Dict[str, str]:
@@ -1100,7 +1123,8 @@ class DiscussionOrchestrator:
                 template_content=template,
                 agent=agent_cfg,
                 user_idea=discussion.user_idea,
-                history=history,
+                requirement_status_section=self._requirement_status_section(discussion),
+                clarification_questions_section=clarification_questions_section,
                 user_feedbacks=discussion.user_feedbacks,
                 round_num=round_num,
             )

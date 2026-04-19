@@ -12,6 +12,7 @@ from lib.prompt_builder import (
     build_history_section,
     build_independent_prompt,
     build_moderator_opening_prompt,
+    build_requirement_round_prompt,
     build_prompt,
     build_synthesis_prompt,
 )
@@ -158,6 +159,44 @@ class TestBuildSynthesisPrompt:
         result = build_synthesis_prompt(template, agent, "主题", full_history, [])
 
         assert "独立发言" in result
+
+
+class TestBuildRequirementRoundPrompt:
+    def test_uses_only_summary_sections(self, agent: AgentConfig):
+        template = (
+            "状态: {requirement_status_section}\n"
+            "问题: {clarification_questions_section}\n"
+            "反馈: {user_feedback_section}\n"
+        )
+        result = build_requirement_round_prompt(
+            template,
+            agent,
+            "主题",
+            requirement_status_section="- Goal: 已知",
+            clarification_questions_section="- [Inputs] 输入来自哪里？",
+            user_feedbacks=["用户补充了输入来源"],
+            round_num=1,
+        )
+
+        assert "已知" in result
+        assert "输入来自哪里" in result
+        assert "用户补充了输入来源" in result
+        assert "history_section" not in result
+
+    def test_latest_user_feedback_wins(self, agent: AgentConfig):
+        template = "反馈: {user_feedback_section}"
+        result = build_requirement_round_prompt(
+            template,
+            agent,
+            "主题",
+            requirement_status_section="",
+            clarification_questions_section="",
+            user_feedbacks=["第一条反馈", "最新反馈"],
+            round_num=2,
+        )
+
+        assert "最新反馈" in result
+        assert "第一条反馈" not in result
 
 
 class TestBuildHistorySection:

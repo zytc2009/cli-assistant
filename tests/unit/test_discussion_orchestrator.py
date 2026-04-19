@@ -135,6 +135,27 @@ class TestRunIndependentPhase:
             },
         ]
 
+    def test_requirement_questions_section_is_compact(
+        self,
+        orchestrator: DiscussionOrchestrator,
+        sample_discussion: Discussion,
+    ):
+        sample_discussion.flow = "requirement"
+        round_responses = {
+            "claude-sonnet": (
+                "## 3. 待澄清问题\n"
+                "- [Inputs] 输入是单个文件还是整个目录？\n"
+            )
+        }
+
+        section = orchestrator._build_requirement_questions_section(
+            sample_discussion,
+            round_responses,
+        )
+
+        assert "- [Inputs] 输入是单个文件还是整个目录？" in section
+        assert "Claude Sonnet" in section
+
 
 class TestSelectModerator:
     @patch("lib.discussion_orchestrator.console.input")

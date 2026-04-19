@@ -95,27 +95,11 @@ def build_requirement_round_prompt(
     template_content: str,
     agent: AgentConfig,
     user_idea: str,
-    history: List[Dict],
+    requirement_status_section: str,
+    clarification_questions_section: str,
     user_feedbacks: List[str],
     round_num: int,
 ) -> str:
-    """Build prompt for requirement discussion round (Phase 2, no moderator)."""
-    _TRUNCATE_LEN = 600
-
-    if history:
-        lines = []
-        for round_data in history:
-            rnum = round_data["round"]
-            phase = round_data.get("phase", "讨论")
-            lines.append(f"### 第 {rnum} 轮（{phase}）\n")
-            for agent_name, response in round_data["responses"].items():
-                truncated = response[:_TRUNCATE_LEN] + "..." if len(response) > _TRUNCATE_LEN else response
-                lines.append(f"**{agent_name}：**\n{truncated}\n")
-            lines.append("---\n")
-        history_section = "\n".join(lines)
-    else:
-        history_section = "（暂无历史记录）"
-
     if user_feedbacks:
         user_feedback_section = user_feedbacks[-1]
     else:
@@ -125,7 +109,8 @@ def build_requirement_round_prompt(
         agent_name=agent.name,
         agent_strengths=agent.strengths,
         user_idea=user_idea,
-        history_section=history_section,
+        requirement_status_section=requirement_status_section,
+        clarification_questions_section=clarification_questions_section,
         user_feedback_section=user_feedback_section,
         round_num=round_num,
     )
