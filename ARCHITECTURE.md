@@ -460,6 +460,15 @@ Phase 3 — run_synthesis_phase（按 flow 选择综合者）
   └── 保存最终文档
 ```
 
+### 需求层 / 执行层边界
+
+需求讨论阶段只输出需求层内容，避免把执行字段提前混进 `requirement.md`：
+
+- `requirement.md` 只保留 `Goal`、`Scope`、`Inputs`、`Outputs`、`Acceptance Criteria`、`Open Questions`
+- `_validate_requirement_output()` 会拦截带有 `Constraints`、`Status`、`workspace_dir`、`output_dir`、`execution_mode`、`harness` 的输出
+- `_build_harness_task_document()` 负责把收敛后的需求转换成 Harness 可消费的 `task.md`
+- `export-task` 命令提供显式导出入口，支持把任务文档写到指定路径
+
 **需求讨论 Prompt 结构**（`requirement_discussion_response.md`）
 
 每轮 AI 发言按 4 节输出，便于自动解析：

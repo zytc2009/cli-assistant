@@ -412,6 +412,7 @@ council                  交互式向导（无参数时自动启动）
 cli_assistant.py discuss       讨论模式（Phase 1-3，实时输出）
 cli_assistant.py new           发起新议题（单阶段或预设流程）
 cli_assistant.py continue      继续已有议题的下一阶段
+cli_assistant.py export-task   将需求文档导出为 Harness 可入队的 task.md
 cli_assistant.py interactive   交互式菜单模式
 cli_assistant.py finalize      将最新方案标记为定稿
 cli_assistant.py list          列出所有历史议题
@@ -419,6 +420,18 @@ cli_assistant.py show          查看议题详情 / 方案 / 纪要
 cli_assistant.py test-round    测试单个 Agent 连通性
 cli_assistant.py agent         Agent 配置管理（detect/list/add/remove）
 ```
+
+---
+
+### 需求到执行
+
+如果目标是把想法直接交给 Harness 跑任务，推荐走这条最短路径：
+
+1. 用 `discuss` 的需求讨论模式产出 `requirement.md`
+2. 用 `export-task <topic_id> --output <path>` 导出 Harness 可消费的 `task.md`
+3. 在 `Harness_engineering` 中把 `task.md` 入队执行
+
+`requirement.md` 只保留需求层内容，`task.md` 才补 `Constraints`、`Status: ready` 和其他执行层字段。这样需求澄清和项目执行可以分开处理，边界更清楚。
 
 ---
 
@@ -505,6 +518,7 @@ Phase 3: 综合生成 requirement.md
 ├── 若发现问题：提示用户，可选择自动修正一轮
 └── 最终保存 requirement.md
 ```
+requirement.md 的需求层结构与 Harness 导出方式，见上面的「需求到执行」。
 
 **与 `new` 模式的区别**
 

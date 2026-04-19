@@ -27,6 +27,7 @@ tests/
 │   ├── test_context.py              # 上下文压缩
 │   ├── test_consensus.py            # 共识检测（mock runner）
 │   ├── test_summarizer.py           # 纪要/方案生成（mock runner）
+│   ├── test_cli_assistant.py        # 需求校验与 task 导出
 │   ├── test_agent_runner.py          # CLI 调用封装（mock subprocess）
 │   ├── test_streaming_runner.py      # 流式输出（mock subprocess）
 │   ├── test_cli_detector.py          # CLI 检测（mock shutil/subprocess）
@@ -125,6 +126,14 @@ cli_assistant.py         ← 所有模块（CLI 命令）
 | `build_synthesis_prompt()` | 截断，user_feedbacks 连接 |
 | `build_history_section()` | round_num==1 早期返回，截断 |
 | `build_prompt()` | prior_proposal 前置，历史整合 |
+
+### `test_cli_assistant.py` — 需求边界与导出链路
+
+| 函数/场景 | 测试用例 |
+|------|---------|
+| `_validate_requirement_output()` | 只允许需求层字段，拦截 `Constraints` / `Status` / 执行元数据泄漏 |
+| `_build_harness_task_document()` | 将需求文档拼成 Harness 可入队的 `task.md` |
+| `export-task` 命令 | `--output` 写入指定路径，并保留任务文档结构 |
 
 ### `test_agent_runner.py` — 优先级 ★★★
 
