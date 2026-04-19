@@ -115,6 +115,7 @@ _REQUIREMENT_FORBIDDEN_PATTERNS = (
     r"(?im)^\s*##\s+Constraints\s*$",
     r"(?im)^\s*##\s+Status\s*$",
     r"(?im)^\s*-\s*(language|platform|harness|execution_mode|workspace_dir|output_dir)\s*:",
+    r"(?im)(实现方案|技术选型|代码示例|接口设计|架构设计|数据库设计|页面结构|开发步骤|算法实现)",
 )
 
 

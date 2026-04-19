@@ -159,6 +159,33 @@ class TestValidateRequirementOutput:
         except ValueError as exc:
             assert "execution metadata" in str(exc)
 
+    def test_rejects_implementation_language(self):
+        requirement = "\n".join(
+            [
+                "# Requirement: Build a calculator",
+                "## Goal",
+                "Build a command-line calculator.",
+                "## Scope",
+                "- In scope: add arithmetic operations",
+                "## Inputs",
+                "- stdin expressions",
+                "## Outputs",
+                "- stdout results",
+                "## Acceptance Criteria",
+                "- correct arithmetic",
+                "## Open Questions",
+                "- none",
+                "## Goal",
+                "这里包含实现方案与接口设计",
+            ]
+        )
+
+        try:
+            _validate_requirement_output(requirement)
+            raise AssertionError("expected ValueError")
+        except ValueError as exc:
+            assert "execution metadata" in str(exc) or "requirement layer" in str(exc)
+
 
 class TestBuildHarnessTaskDocument:
     def test_appends_constraints_and_ready_status(self):
