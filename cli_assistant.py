@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import re
 import sys
 from pathlib import Path
 
@@ -101,12 +102,72 @@ def _pick_summarizer(config: Config) -> str:
     return next(iter(config.agents))
 
 
+_REQUIREMENT_REQUIRED_HEADINGS = (
+    "# Requirement:",
+    "## Goal",
+    "## Scope",
+    "## Inputs",
+    "## Outputs",
+    "## Acceptance Criteria",
+    "## Open Questions",
+)
+_REQUIREMENT_FORBIDDEN_PATTERNS = (
+    r"(?im)^\s*##\s+Constraints\s*$",
+    r"(?im)^\s*##\s+Status\s*$",
+    r"(?im)^\s*-\s*(language|platform|harness|execution_mode|workspace_dir|output_dir)\s*:",
+)
+
+
+def _validate_requirement_output(final_output: str) -> None:
+    missing = [heading for heading in _REQUIREMENT_REQUIRED_HEADINGS if heading not in final_output]
+    if missing:
+        raise ValueError("requirement.md is missing required sections: " + ", ".join(missing))
+
+    if any(re.search(pattern, final_output) for pattern in _REQUIREMENT_FORBIDDEN_PATTERNS):
+        raise ValueError(
+            "requirement.md contains execution metadata that must stay out of the requirement layer"
+        )
+
+
+def _build_harness_task_document(final_output: str, constraints: list[str]) -> str:
+    constraints_block = "\n## Constraints\n" + "\n".join(constraints)
+    return final_output.rstrip() + "\n" + constraints_block + "\n\n## Status\nready\n"
+
+
+def _resolve_final_output_for_topic(topic_id: str) -> str:
+    try:
+        discussion = load_discussion(topic_id, BASE_DIR)
+        if discussion.final_output:
+            return discussion.final_output
+    except (FileNotFoundError, ValueError):
+        pass
+
+    try:
+        meeting = load_meeting(topic_id, BASE_DIR)
+        if meeting.sessions and meeting.sessions[-1].proposal:
+            return meeting.sessions[-1].proposal
+    except (FileNotFoundError, ValueError):
+        pass
+
+    return ""
+
+
 # ── Harness Task Export ───────────────────────────────────────────────────────
 
-def _export_as_harness_task(final_output: str, topic_id: str) -> None:
+def _export_as_harness_task(
+    final_output: str,
+    topic_id: str,
+    output_path: Path | None = None,
+) -> None:
     """Interactive wizard: append Constraints + Status to produce a Harness-ready task.md."""
     console.print("\n[bold cyan]── Harness 任务导出向导 ──[/bold cyan]")
     console.print("[dim]所有字段均可选，直接回车跳过[/dim]\n")
+
+    try:
+        _validate_requirement_output(final_output)
+    except ValueError as exc:
+        console.print(f"[red]无法导出 Harness 任务：{exc}[/red]")
+        return
 
     constraints: list[str] = []
 
@@ -140,10 +201,10 @@ def _export_as_harness_task(final_output: str, topic_id: str) -> None:
             output_dir = f"output/{topic_id}"
         constraints.append(f"- output_dir: {output_dir}")
 
-    constraints_block = "\n## Constraints\n" + "\n".join(constraints)
-    task_content = final_output.rstrip() + "\n" + constraints_block + "\n\n## Status\nready\n"
+    task_content = _build_harness_task_document(final_output, constraints)
 
-    task_path = BASE_DIR / "meetings" / topic_id / "task.md"
+    task_path = output_path or (BASE_DIR / "meetings" / topic_id / "task.md")
+    task_path.parent.mkdir(parents=True, exist_ok=True)
     task_path.write_text(task_content, encoding="utf-8")
 
     console.print(f"\n[green]✓ task.md 已生成：[/green]")
@@ -862,6 +923,20 @@ def finalize(topic_id):
 
 
 # ── list ──────────────────────────────────────────────────────────────────────
+
+@cli.command("export-task")
+@click.argument("topic_id")
+@click.option("--output", "-o", default="", help="Destination path for task.md")
+def export_task(topic_id, output):
+    """Export the final requirement content as a Harness task document."""
+    final_output = _resolve_final_output_for_topic(topic_id)
+    if not final_output:
+        console.print(f"[red]未找到可导出的最终内容: {topic_id}[/red]")
+        sys.exit(1)
+
+    output_path = Path(output).expanduser() if output else None
+    _export_as_harness_task(final_output, topic_id, output_path=output_path)
+
 
 @cli.command("list")
 def list_cmd():

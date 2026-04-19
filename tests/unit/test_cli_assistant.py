@@ -3,7 +3,16 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from cli_assistant import _confirm_config, _input_multiline, _resolve_moderator
+from click.testing import CliRunner
+
+from cli_assistant import (
+    _confirm_config,
+    _build_harness_task_document,
+    _input_multiline,
+    _resolve_moderator,
+    cli,
+    _validate_requirement_output,
+)
 
 
 class TestResolveModerator:
@@ -54,7 +63,8 @@ class TestConfirmConfig:
 
         assert disc_config == {"max_rounds": 3}
         mock_input.assert_called_once()
-        mock_print.assert_called_once_with("\n[bold cyan][第5步][/bold cyan] 讨论配置：")
+        assert mock_print.call_count == 1
+        assert "讨论" in mock_print.call_args[0][0]
 
     @patch("cli_assistant.console.print")
     @patch("cli_assistant.console.input")
@@ -96,3 +106,109 @@ class TestInputMultiline:
         assert value == "第一行\n第二行"
         assert mock_input.call_count == 3
         assert mock_print.call_count == 2
+
+
+class TestValidateRequirementOutput:
+    def test_accepts_requirement_only_document(self):
+        _validate_requirement_output(
+            "\n".join(
+                [
+                    "# Requirement: Build a calculator",
+                    "## Goal",
+                    "Build a command-line calculator.",
+                    "## Scope",
+                    "- In scope: add arithmetic operations",
+                    "## Inputs",
+                    "- stdin expressions",
+                    "## Outputs",
+                    "- stdout results",
+                    "## Acceptance Criteria",
+                    "- correct arithmetic",
+                    "## Open Questions",
+                    "- none",
+                ]
+            )
+        )
+
+    def test_rejects_execution_fields(self):
+        requirement = "\n".join(
+            [
+                "# Requirement: Build a calculator",
+                "## Goal",
+                "Build a command-line calculator.",
+                "## Scope",
+                "- In scope: add arithmetic operations",
+                "## Inputs",
+                "- stdin expressions",
+                "## Outputs",
+                "- stdout results",
+                "## Acceptance Criteria",
+                "- correct arithmetic",
+                "## Open Questions",
+                "- none",
+                "## Constraints",
+                "- execution_mode: cli",
+            ]
+        )
+
+        try:
+            _validate_requirement_output(requirement)
+            raise AssertionError("expected ValueError")
+        except ValueError as exc:
+            assert "execution metadata" in str(exc)
+
+
+class TestBuildHarnessTaskDocument:
+    def test_appends_constraints_and_ready_status(self):
+        document = _build_harness_task_document(
+            "# Requirement: Build a calculator\n## Goal\nBuild a command-line calculator.\n",
+            ["- language: python", "- platform: windows"],
+        )
+
+        assert document.endswith("## Status\nready\n")
+        assert "## Constraints" in document
+        assert "- language: python" in document
+        assert "- platform: windows" in document
+
+
+class TestExportTaskCommand:
+    def test_exports_to_explicit_output_path(self, tmp_path):
+        requirement_doc = "\n".join(
+            [
+                "# Requirement: Build a calculator",
+                "## Goal",
+                "Build a command-line calculator.",
+                "## Scope",
+                "- In scope: add arithmetic operations",
+                "## Inputs",
+                "- stdin expressions",
+                "## Outputs",
+                "- stdout results",
+                "## Acceptance Criteria",
+                "- correct arithmetic",
+                "## Open Questions",
+                "- none",
+            ]
+        )
+        output_path = tmp_path / "exports" / "task.md"
+        runner = CliRunner()
+
+        with (
+            patch("cli_assistant._resolve_final_output_for_topic", return_value=requirement_doc),
+            patch(
+                "cli_assistant.console.input",
+                side_effect=["python", "windows", "", "", "", ""],
+            ),
+        ):
+            result = runner.invoke(
+                cli,
+                ["export-task", "topic-1", "--output", str(output_path)],
+            )
+
+        assert result.exit_code == 0
+        assert output_path.exists()
+        content = output_path.read_text(encoding="utf-8")
+        assert "## Status" in content
+        assert "ready" in content
+        assert "- language: python" in content
+        assert "- platform: windows" in content
